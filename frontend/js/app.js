@@ -1,5 +1,5 @@
-// API_BASE is loaded from config.js
-const API_BASE = typeof API_BASE !== "undefined" ? API_BASE : "http://localhost:8000";
+// API Base URL - Change this to your backend URL
+const API_BASE = "https://smartpesa-api.onrender.com";
 
 // SmartPesa - Professional Frontend with Fixed Authentication
 console.log('🚀 SmartPesa initializing...');
@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded');
     console.log('Auth token exists:', !!authToken);
     console.log('Current user:', currentUser);
+    console.log('API Base URL:', API_BASE);
     
     if (authToken && currentUser.email) {
         console.log('Already logged in, showing dashboard');
@@ -182,6 +183,7 @@ async function handleLogin(e) {
     const password = $('password')?.value;
     
     console.log('Login attempt with email:', email);
+    console.log('Using API URL:', API_BASE);
     
     try {
         const res = await fetch(`${API_BASE}/users/login`, {
@@ -210,7 +212,7 @@ async function handleLogin(e) {
         }
     } catch (err) {
         console.error('Login error:', err);
-        showToast('Network error - is backend running on port 8000?', 'error');
+        showToast('Network error - is backend running?', 'error');
     }
 }
 
@@ -428,9 +430,6 @@ window.selectBusiness = function(id) {
     loadUserData();
     showToast(`Business ${id} selected`);
 };
-
-// Initialize
-console.log('✅ SmartPesa ready with fixed authentication');
 
 // ============================================
 // DASHBOARD FUNCTIONS
@@ -1361,3 +1360,4 @@ window.markPaymentPaid = async function(paymentId) {
 };
 
 console.log('✅ All SmartPesa functions loaded');
+console.log('✅ Using API_BASE:', API_BASE);
