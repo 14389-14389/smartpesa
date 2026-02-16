@@ -1,6 +1,10 @@
 // API Base URL - Change this to your backend URL
 const API_BASE = "https://smartpesa-api.onrender.com";
 
+// API Base URL - Change this to your backend URL
+
+// API Base URL - Change this to your backend URL
+
 // SmartPesa - Professional Frontend with Fixed Authentication
 console.log('🚀 SmartPesa initializing...');
 
