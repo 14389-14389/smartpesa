@@ -1,12 +1,8 @@
-// API Base URL - Change this to your backend URL
+// SmartPesa - Production Version
 const API_BASE = "https://smartpesa-api.onrender.com";
 
-// API Base URL - Change this to your backend URL
-
-// API Base URL - Change this to your backend URL
-
-// SmartPesa - Professional Frontend with Fixed Authentication
 console.log('🚀 SmartPesa initializing...');
+console.log('API Base URL:', API_BASE);
 
 let authToken = localStorage.getItem('authToken');
 let currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -76,7 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded');
     console.log('Auth token exists:', !!authToken);
     console.log('Current user:', currentUser);
-    console.log('API Base URL:', API_BASE);
     
     if (authToken && currentUser.email) {
         console.log('Already logged in, showing dashboard');
