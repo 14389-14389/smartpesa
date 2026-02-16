@@ -1,0 +1,1325 @@
+// SmartPesa - Professional Frontend with Inventory Management
+console.log('🚀 SmartPesa initializing...');
+
+const API_BASE = 'http://localhost:8000';
+let authToken = localStorage.getItem('authToken');
+let currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+let currentBusinessId = localStorage.getItem('currentBusinessId');
+let charts = {};
+
+// DOM Elements
+const loginScreen = document.getElementById('login-screen');
+const registerScreen = document.getElementById('register-screen');
+const dashboardScreen = document.getElementById('dashboard-screen');
+const loginForm = document.getElementById('login-form');
+const registerForm = document.getElementById('register-form');
+const navItems = document.querySelectorAll('.nav-item');
+const menuToggle = document.getElementById('menu-toggle');
+const sidebar = document.getElementById('sidebar');
+const pageTitle = document.getElementById('page-title');
+const views = document.querySelectorAll('.view');
+const userName = document.getElementById('user-name');
+const userEmail = document.getElementById('user-email');
+const logoutBtn = document.getElementById('logout-btn');
+const businessSelect = document.getElementById('business-select');
+const refreshBtn = document.getElementById('refresh-data');
+
+// Modal elements
+const inventoryModal = document.getElementById('inventory-modal');
+const stockModal = document.getElementById('stock-modal');
+const supplierModal = document.getElementById('supplier-modal');
+const paymentModal = document.getElementById('payment-modal');
+const addInventoryBtn = document.getElementById('add-inventory-btn');
+const addSupplierBtn = document.getElementById('add-supplier-btn');
+const closeButtons = document.querySelectorAll('.close');
+
+// Form elements
+const inventoryForm = document.getElementById('inventory-form');
+const stockForm = document.getElementById('stock-form');
+const supplierForm = document.getElementById('supplier-form');
+const paymentForm = document.getElementById('payment-form');
+
+// Helper function
+function $(id) {
+    return document.getElementById(id);
+}
+
+// Format as Kenyan Shillings
+function formatKES(amount) {
+    if (amount === undefined || amount === null) return 'KES 0';
+    return 'KES ' + Math.round(amount).toLocaleString();
+}
+
+// Format date
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleDateString('en-KE', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded');
+    
+    if (authToken && currentUser.email) {
+        console.log('Already logged in, showing dashboard');
+        showDashboard();
+        loadUserData();
+    } else {
+        showLogin();
+    }
+    
+    setupEventListeners();
+});
+
+function setupEventListeners() {
+    // Auth toggles
+    $('show-register')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        showRegister();
+    });
+    
+    $('show-login')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        showLogin();
+    });
+    
+    // Forms
+    loginForm?.addEventListener('submit', handleLogin);
+    registerForm?.addEventListener('submit', handleRegister);
+    inventoryForm?.addEventListener('submit', handleAddInventory);
+    stockForm?.addEventListener('submit', handleStockAdjustment);
+    supplierForm?.addEventListener('submit', handleAddSupplier);
+    paymentForm?.addEventListener('submit', handleAddPayment);
+    
+    // Navigation
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            const view = item.dataset.view;
+            console.log('Nav clicked:', view);
+            switchView(view);
+        });
+    });
+    
+    // Menu toggle for mobile
+    menuToggle?.addEventListener('click', () => {
+        sidebar.classList.toggle('active');
+    });
+    
+    // Logout
+    logoutBtn?.addEventListener('click', handleLogout);
+    
+    // Business selector
+    businessSelect?.addEventListener('change', (e) => {
+        currentBusinessId = e.target.value;
+        localStorage.setItem('currentBusinessId', currentBusinessId);
+        console.log('Business selected:', currentBusinessId);
+        loadUserData();
+    });
+    
+    // Refresh button
+    refreshBtn?.addEventListener('click', () => {
+        loadUserData();
+        showToast('Data refreshed!');
+    });
+    
+    // Add Inventory button
+    addInventoryBtn?.addEventListener('click', () => {
+        openInventoryModal();
+    });
+    
+    // Add Supplier button
+    addSupplierBtn?.addEventListener('click', () => {
+        openSupplierModal();
+    });
+    
+    // Close modal buttons
+    closeButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            inventoryModal?.classList.remove('active');
+            stockModal?.classList.remove('active');
+            supplierModal?.classList.remove('active');
+            paymentModal?.classList.remove('active');
+        });
+    });
+    
+    // Click outside modal to close
+    window.addEventListener('click', (e) => {
+        if (e.target === inventoryModal) {
+            inventoryModal.classList.remove('active');
+        }
+        if (e.target === stockModal) {
+            stockModal.classList.remove('active');
+        }
+        if (e.target === supplierModal) {
+            supplierModal.classList.remove('active');
+        }
+        if (e.target === paymentModal) {
+            paymentModal.classList.remove('active');
+        }
+    });
+}
+
+// Show toast notification
+function showToast(message, type = 'success') {
+    // Simple alert for now
+    alert(message);
+}
+
+// Authentication
+async function handleLogin(e) {
+    e.preventDefault();
+    
+    const email = $('email')?.value;
+    const password = $('password')?.value;
+    
+    try {
+        const res = await fetch(`${API_BASE}/users/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            authToken = data.access_token;
+            currentUser = { email };
+            localStorage.setItem('authToken', authToken);
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            
+            console.log('Login successful');
+            showToast('Login successful!');
+            
+            showDashboard();
+            await loadUserData();
+            
+        } else {
+            showToast('Login failed: ' + (data.detail || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        showToast('Network error - is backend running on port 8000?', 'error');
+    }
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+    
+    const email = $('reg-email')?.value;
+    const password = $('reg-password')?.value;
+    const confirm = $('reg-confirm')?.value;
+    
+    if (password !== confirm) {
+        showToast('Passwords do not match', 'error');
+        return;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/users/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        if (res.ok) {
+            showToast('Registration successful! Please login.');
+            showLogin();
+        } else {
+            const data = await res.json();
+            showToast('Registration failed: ' + (data.detail || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+}
+
+function handleLogout() {
+    localStorage.clear();
+    authToken = null;
+    currentUser = {};
+    showLogin();
+    showToast('Logged out');
+}
+
+// UI Navigation
+function showLogin() {
+    console.log('Showing login');
+    if (loginScreen) loginScreen.classList.add('active');
+    if (registerScreen) registerScreen.classList.remove('active');
+    if (dashboardScreen) dashboardScreen.classList.remove('active');
+}
+
+function showRegister() {
+    console.log('Showing register');
+    if (registerScreen) registerScreen.classList.add('active');
+    if (loginScreen) loginScreen.classList.remove('active');
+    if (dashboardScreen) dashboardScreen.classList.remove('active');
+}
+
+function showDashboard() {
+    console.log('Showing dashboard');
+    if (dashboardScreen) dashboardScreen.classList.add('active');
+    if (loginScreen) loginScreen.classList.remove('active');
+    if (registerScreen) registerScreen.classList.remove('active');
+    
+    if (userName) userName.textContent = currentUser.email?.split('@')[0] || 'User';
+    if (userEmail) userEmail.textContent = currentUser.email || 'user@example.com';
+}
+
+function switchView(viewName) {
+    console.log('Switching to view:', viewName);
+    
+    // Update navigation
+    navItems.forEach(item => {
+        item.classList.remove('active');
+        if (item.dataset.view === viewName) {
+            item.classList.add('active');
+        }
+    });
+    
+    // Update title
+    const titles = {
+        dashboard: 'Dashboard',
+        transactions: 'Transactions',
+        forecast: 'Forecast',
+        inventory: 'Inventory',
+        suppliers: 'Suppliers',
+        businesses: 'Businesses',
+        risk: 'Risk Analysis'
+    };
+    if (pageTitle) pageTitle.textContent = titles[viewName] || 'Dashboard';
+    
+    // Hide all views
+    views.forEach(v => v.classList.remove('active'));
+    
+    // Show selected view
+    const selectedView = $(`${viewName}-view`);
+    if (selectedView) {
+        selectedView.classList.add('active');
+    }
+    
+    // Load data for the view
+    setTimeout(() => {
+        switch(viewName) {
+            case 'dashboard': loadDashboard(); break;
+            case 'transactions': loadTransactions(); break;
+            case 'forecast': loadForecast(); break;
+            case 'inventory': loadInventory(); break;
+            case 'suppliers': loadSuppliers(); break;
+            case 'businesses': loadBusinesses(); break;
+            case 'risk': loadRiskAnalysis(); break;
+        }
+    }, 100);
+}
+
+// Data Loading
+async function loadUserData() {
+    console.log('Loading user data...');
+    await loadBusinesses();
+    if (currentBusinessId) {
+        loadDashboard();
+        loadForecast();
+        loadRiskAnalysis();
+        loadInventory();
+        loadSuppliers();
+    }
+}
+
+async function loadBusinesses() {
+    try {
+        const res = await fetch(`${API_BASE}/businesses/`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const businesses = await res.json();
+        
+        // Update selector
+        if (businessSelect) {
+            businessSelect.innerHTML = '<option value="">Select Business</option>';
+            businesses.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b.id;
+                opt.textContent = b.name;
+                if (b.id == currentBusinessId) opt.selected = true;
+                businessSelect.appendChild(opt);
+            });
+        }
+        
+        // Set default
+        if (!currentBusinessId && businesses.length > 0) {
+            currentBusinessId = businesses[0].id;
+            localStorage.setItem('currentBusinessId', currentBusinessId);
+            if (businessSelect) businessSelect.value = currentBusinessId;
+        }
+        
+        // Update businesses grid
+        const grid = $('businesses-grid');
+        if (grid) {
+            if (!businesses.length) {
+                grid.innerHTML = '<div class="loading-spinner">No businesses found. Create one first.</div>';
+            } else {
+                grid.innerHTML = businesses.map(b => `
+                    <div class="business-card" onclick="selectBusiness(${b.id})">
+                        <h3>${b.name}</h3>
+                        <p><i class="fas fa-calendar"></i> Created: ${new Date(b.created_at).toLocaleDateString()}</p>
+                        <p><i class="fas fa-id-card"></i> ID: ${b.id}</p>
+                        <span class="badge ${b.id == currentBusinessId ? 'income' : ''}">
+                            ${b.id == currentBusinessId ? '✓ Selected' : 'Click to select'}
+                        </span>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (err) {
+        console.error('Error loading businesses:', err);
+    }
+}
+
+async function loadDashboard() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const summary = await fetch(
+            `${API_BASE}/transactions/summary/overview?business_id=${currentBusinessId}&days=30`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        if ($('total-income')) $('total-income').textContent = formatKES(summary.total_income || 0);
+        if ($('total-expense')) $('total-expense').textContent = formatKES(summary.total_expense || 0);
+        if ($('net-cashflow')) $('net-cashflow').textContent = formatKES(summary.net_cashflow || 0);
+        
+        // Load recent transactions
+        const transactions = await fetch(
+            `${API_BASE}/transactions/?business_id=${currentBusinessId}&limit=5`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        const tbody = $('recent-transactions-body');
+        if (tbody) {
+            if (!transactions.length) {
+                tbody.innerHTML = '<tr><td colspan="5">No transactions</td></tr>';
+            } else {
+                tbody.innerHTML = transactions.map(t => `
+                    <tr>
+                        <td>${new Date(t.created_at).toLocaleDateString()}</td>
+                        <td>${t.description || '-'}</td>
+                        <td>${t.category}</td>
+                        <td>${formatKES(t.amount)}</td>
+                        <td><span class="badge ${t.type}">${t.type}</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+        
+        // Load risk score
+        try {
+            const risk = await fetch(
+                `${API_BASE}/forecast/${currentBusinessId}/risk-alert`,
+                { headers: { 'Authorization': `Bearer ${authToken}` } }
+            ).then(r => r.json());
+            if ($('risk-score')) $('risk-score').textContent = risk.risk_score || 0;
+        } catch (e) {}
+        
+        // Load charts
+        loadCashflowChart();
+        loadCategoryChart();
+        
+    } catch (err) {
+        console.error('Error loading dashboard:', err);
+    }
+}
+
+async function loadTransactions() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const transactions = await fetch(
+            `${API_BASE}/transactions/?business_id=${currentBusinessId}&limit=100`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        const tbody = $('transactions-body');
+        if (tbody) {
+            if (!transactions.length) {
+                tbody.innerHTML = '<tr><td colspan="5">No transactions found</td></tr>';
+            } else {
+                tbody.innerHTML = transactions.map(t => `
+                    <tr>
+                        <td>${new Date(t.created_at).toLocaleDateString()}</td>
+                        <td>${t.description || '-'}</td>
+                        <td>${t.category}</td>
+                        <td>${formatKES(t.amount)}</td>
+                        <td><span class="badge ${t.type}">${t.type}</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+    } catch (err) {
+        console.error('Error loading transactions:', err);
+    }
+}
+
+async function loadForecast() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const forecast = await fetch(
+            `${API_BASE}/forecast/${currentBusinessId}/30days`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        if (forecast.error) {
+            if ($('forecast-table-body')) {
+                $('forecast-table-body').innerHTML = `<tr><td colspan="6">${forecast.error}</td></tr>`;
+            }
+            return;
+        }
+        
+        // Update summary
+        if (forecast.hybrid_model?.forecast) {
+            const avg = forecast.hybrid_model.forecast.reduce((s, d) => s + d.hybrid_prediction, 0) / forecast.hybrid_model.forecast.length;
+            if ($('forecast-avg')) $('forecast-avg').textContent = formatKES(avg);
+            
+            const next7 = forecast.hybrid_model.forecast.slice(0, 7).reduce((s, d) => s + d.hybrid_prediction, 0);
+            if ($('forecast-7day')) $('forecast-7day').textContent = formatKES(next7);
+        }
+        
+        // Update risk level
+        if (forecast.risk_analysis) {
+            const level = forecast.risk_analysis.risk_score < 30 ? 'LOW' : 
+                         forecast.risk_analysis.risk_score < 70 ? 'MEDIUM' : 'HIGH';
+            const levelEl = $('forecast-risk-level');
+            if (levelEl) {
+                levelEl.textContent = level;
+                levelEl.className = `badge ${level.toLowerCase()}`;
+            }
+        }
+        
+        // Update table
+        if (forecast.hybrid_model?.forecast && $('forecast-table-body')) {
+            $('forecast-table-body').innerHTML = forecast.hybrid_model.forecast.map(d => `
+                <tr>
+                    <td>${new Date(d.date).toLocaleDateString()}</td>
+                    <td>${formatKES(d.hybrid_prediction)}</td>
+                    <td>${formatKES(d.lower_bound)}</td>
+                    <td>${formatKES(d.upper_bound)}</td>
+                    <td>${formatKES(d.prophet_prediction)}</td>
+                    <td>${formatKES(d.rf_correction)}</td>
+                </tr>
+            `).join('');
+        }
+        
+        // Create forecast chart
+        createForecastChart(forecast.hybrid_model?.forecast);
+        
+    } catch (err) {
+        console.error('Error loading forecast:', err);
+    }
+}
+
+// Inventory Functions
+async function loadInventory() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const res = await fetch(
+            `${API_BASE}/inventory/?business_id=${currentBusinessId}`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        );
+        
+        if (!res.ok) {
+            throw new Error('Failed to load inventory');
+        }
+        
+        const items = await res.json();
+        console.log('Inventory items:', items);
+        
+        // Update KPI cards
+        if ($('total-items')) $('total-items').textContent = items.length;
+        
+        // Calculate total inventory value
+        const totalValue = items.reduce((sum, item) => sum + (item.quantity * item.price_per_unit), 0);
+        if ($('inventory-value')) $('inventory-value').textContent = formatKES(totalValue);
+        
+        // Count low stock items
+        const lowStockItems = items.filter(item => item.quantity <= item.reorder_level);
+        if ($('low-stock-count')) $('low-stock-count').textContent = lowStockItems.length;
+        
+        // Calculate turnover rate (simplified)
+        const turnoverRate = items.length > 0 ? Math.round((lowStockItems.length / items.length) * 100) : 0;
+        if ($('turnover-rate')) $('turnover-rate').textContent = turnoverRate + '%';
+        
+        // Load low stock alerts
+        await loadLowStockAlerts();
+        
+        // Update inventory table
+        const tbody = $('inventory-table-body');
+        if (tbody) {
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="8">No inventory items found. Click "Add Item" to create one.</td></tr>';
+            } else {
+                tbody.innerHTML = items.map(item => {
+                    const totalValue = item.quantity * item.price_per_unit;
+                    const stockStatus = item.quantity <= item.reorder_level ? 'low-stock' : 
+                                       item.quantity <= item.reorder_level * 2 ? 'medium-stock' : 'normal-stock';
+                    const statusText = item.quantity <= item.reorder_level ? 'Low Stock' :
+                                      item.quantity <= item.reorder_level * 2 ? 'Medium' : 'Good';
+                    
+                    return `
+                    <tr>
+                        <td>${item.sku || '-'}</td>
+                        <td>${item.name}</td>
+                        <td>${item.quantity}</td>
+                        <td>${item.unit}</td>
+                        <td>${formatKES(item.price_per_unit)}</td>
+                        <td>${formatKES(totalValue)}</td>
+                        <td><span class="badge ${stockStatus}">${statusText}</span></td>
+                        <td class="action-buttons">
+                            <button onclick="openStockModal(${item.id}, '${item.name}')" title="Adjust Stock">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="deleteInventoryItem(${item.id})" class="delete" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `}).join('');
+            }
+        }
+        
+    } catch (err) {
+        console.error('Error loading inventory:', err);
+        if ($('inventory-table-body')) {
+            $('inventory-table-body').innerHTML = '<tr><td colspan="8">Error loading inventory</td></tr>';
+        }
+    }
+}
+
+async function loadLowStockAlerts() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const alerts = await fetch(
+            `${API_BASE}/inventory/alerts/low-stock?business_id=${currentBusinessId}`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        const alertsContainer = $('low-stock-alerts');
+        if (alertsContainer) {
+            if (!alerts.length) {
+                alertsContainer.innerHTML = '';
+            } else {
+                alertsContainer.innerHTML = '<h3>Low Stock Alerts</h3>' + alerts.map(alert => `
+                    <div class="alert-item high">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div class="alert-content">
+                            <div class="alert-title">Low Stock: ${alert.name}</div>
+                            <div class="alert-message">
+                                Current: ${alert.current_quantity} | 
+                                Reorder Level: ${alert.reorder_level} | 
+                                Deficit: ${alert.deficit}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+    } catch (err) {
+        console.error('Error loading low stock alerts:', err);
+    }
+}
+
+async function handleAddInventory(e) {
+    e.preventDefault();
+    
+    const item = {
+        name: $('inv-name')?.value,
+        sku: $('inv-sku')?.value || undefined,
+        quantity: parseFloat($('inv-quantity')?.value || 0),
+        unit: $('inv-unit')?.value,
+        price_per_unit: parseFloat($('inv-price')?.value || 0),
+        reorder_level: parseFloat($('inv-reorder')?.value || 10),
+        business_id: parseInt(currentBusinessId)
+    };
+    
+    try {
+        const res = await fetch(`${API_BASE}/inventory/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(item)
+        });
+        
+        if (res.ok) {
+            inventoryModal?.classList.remove('active');
+            inventoryForm?.reset();
+            await loadInventory();
+            showToast('Inventory item added successfully');
+        } else {
+            const error = await res.json();
+            showToast('Error: ' + (error.detail || 'Failed to add item'), 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+}
+
+async function handleStockAdjustment(e) {
+    e.preventDefault();
+    
+    const itemId = $('stock-item-id')?.value;
+    const quantity = parseFloat($('stock-quantity')?.value);
+    const type = $('stock-type')?.value;
+    const notes = $('stock-notes')?.value;
+    
+    if (!itemId || !quantity || quantity <= 0) {
+        showToast('Please enter a valid quantity', 'error');
+        return;
+    }
+    
+    const endpoint = type === 'add' ? 'add-stock' : 'remove-stock';
+    const url = `${API_BASE}/inventory/${itemId}/${endpoint}?quantity=${quantity}`;
+    
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ notes })
+        });
+        
+        if (res.ok) {
+            stockModal?.classList.remove('active');
+            stockForm?.reset();
+            await loadInventory();
+            showToast(`Stock ${type === 'add' ? 'added' : 'removed'} successfully`);
+        } else {
+            const error = await res.json();
+            showToast('Error: ' + (error.detail || 'Failed to update stock'), 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+}
+
+// Supplier Functions
+async function loadSuppliers() {
+    if (!currentBusinessId) return;
+    
+    try {
+        // Load suppliers
+        const res = await fetch(
+            `${API_BASE}/suppliers/?business_id=${currentBusinessId}`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        );
+        
+        if (!res.ok) {
+            throw new Error('Failed to load suppliers');
+        }
+        
+        const suppliers = await res.json();
+        console.log('Suppliers:', suppliers);
+        
+        // Update KPI cards
+        if ($('total-suppliers')) $('total-suppliers').textContent = suppliers.length;
+        
+        // Load outstanding summary
+        await loadOutstandingSummary();
+        
+        // Load recent payments
+        await loadRecentPayments();
+        
+        // Update suppliers grid
+        const grid = $('suppliers-grid');
+        if (grid) {
+            if (!suppliers.length) {
+                grid.innerHTML = '<div class="loading-spinner">No suppliers found. Click "Add Supplier" to create one.</div>';
+            } else {
+                // Get outstanding for each supplier
+                const suppliersWithOutstanding = await Promise.all(suppliers.map(async (s) => {
+                    try {
+                        const detailRes = await fetch(
+                            `${API_BASE}/suppliers/${s.id}`,
+                            { headers: { 'Authorization': `Bearer ${authToken}` } }
+                        );
+                        if (detailRes.ok) {
+                            return await detailRes.json();
+                        }
+                    } catch (e) {}
+                    return { ...s, total_outstanding: 0, overdue_amount: 0 };
+                }));
+                
+                grid.innerHTML = suppliersWithOutstanding.map(s => `
+                    <div class="supplier-card">
+                        <div class="supplier-header">
+                            <h3>${s.name}</h3>
+                            <div class="action-buttons">
+                                <button onclick="openPaymentModal(${s.id}, '${s.name}')" title="Add Payment">
+                                    <i class="fas fa-credit-card"></i>
+                                </button>
+                                <button onclick="deleteSupplier(${s.id})" class="delete" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="supplier-contact">
+                            <p><i class="fas fa-user"></i> ${s.contact_person || 'No contact'}</p>
+                            <p><i class="fas fa-phone"></i> ${s.phone || 'No phone'}</p>
+                            <p><i class="fas fa-envelope"></i> ${s.email || 'No email'}</p>
+                        </div>
+                        <div class="supplier-stats">
+                            <div class="supplier-stat">
+                                <div class="label">Outstanding</div>
+                                <div class="value">${formatKES(s.total_outstanding || 0)}</div>
+                            </div>
+                            <div class="supplier-stat">
+                                <div class="label">Overdue</div>
+                                <div class="value ${s.overdue_amount > 0 ? 'overdue' : ''}">${formatKES(s.overdue_amount || 0)}</div>
+                            </div>
+                        </div>
+                        <div class="supplier-footer">
+                            <span class="payment-badge ${s.payment_terms ? '' : 'pending'}">
+                                ${s.payment_terms || 'Terms not set'}
+                            </span>
+                            <small>Added ${formatDate(s.created_at)}</small>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+        
+    } catch (err) {
+        console.error('Error loading suppliers:', err);
+        if ($('suppliers-grid')) {
+            $('suppliers-grid').innerHTML = '<div class="error">Error loading suppliers</div>';
+        }
+    }
+}
+
+async function loadOutstandingSummary() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const summary = await fetch(
+            `${API_BASE}/suppliers/outstanding/summary?business_id=${currentBusinessId}`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        if ($('total-outstanding')) $('total-outstanding').textContent = formatKES(summary.total_outstanding || 0);
+        if ($('total-overdue')) $('total-overdue').textContent = formatKES(summary.overdue_total || 0);
+        if ($('pending-count')) $('pending-count').textContent = summary.payment_count || 0;
+        
+    } catch (err) {
+        console.error('Error loading outstanding summary:', err);
+    }
+}
+
+async function loadRecentPayments() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const payments = await fetch(
+            `${API_BASE}/suppliers/payments/all?business_id=${currentBusinessId}&limit=10`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        const tbody = $('payments-table-body');
+        if (tbody) {
+            if (!payments.length) {
+                tbody.innerHTML = '<tr><td colspan="5">No payments found</td></tr>';
+            } else {
+                // Get supplier names
+                const suppliers = await fetch(
+                    `${API_BASE}/suppliers/?business_id=${currentBusinessId}`,
+                    { headers: { 'Authorization': `Bearer ${authToken}` } }
+                ).then(r => r.json());
+                
+                const supplierMap = {};
+                suppliers.forEach(s => supplierMap[s.id] = s.name);
+                
+                const now = new Date();
+                
+                tbody.innerHTML = payments.map(p => {
+                    const dueDate = new Date(p.due_date);
+                    const isOverdue = p.status === 'pending' && dueDate < now;
+                    const status = isOverdue ? 'overdue' : p.status;
+                    
+                    return `
+                    <tr>
+                        <td>${supplierMap[p.supplier_id] || 'Unknown'}</td>
+                        <td>${formatKES(p.amount)}</td>
+                        <td>${formatDate(p.due_date)}</td>
+                        <td><span class="badge ${status}">${status}</span></td>
+                        <td class="action-buttons">
+                            ${p.status === 'pending' ? `
+                                <button onclick="markPaymentPaid(${p.id})" title="Mark as Paid">
+                                    <i class="fas fa-check-circle"></i>
+                                </button>
+                            ` : ''}
+                            <button onclick="deletePayment(${p.id})" class="delete" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `}).join('');
+            }
+        }
+        
+    } catch (err) {
+        console.error('Error loading recent payments:', err);
+    }
+}
+
+async function handleAddSupplier(e) {
+    e.preventDefault();
+    
+    const supplier = {
+        name: $('sup-name')?.value,
+        contact_person: $('sup-contact')?.value || undefined,
+        phone: $('sup-phone')?.value || undefined,
+        email: $('sup-email')?.value || undefined,
+        address: $('sup-address')?.value || undefined,
+        payment_terms: $('sup-terms')?.value || undefined,
+        business_id: parseInt(currentBusinessId)
+    };
+    
+    try {
+        const res = await fetch(`${API_BASE}/suppliers/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(supplier)
+        });
+        
+        if (res.ok) {
+            supplierModal?.classList.remove('active');
+            supplierForm?.reset();
+            await loadSuppliers();
+            showToast('Supplier added successfully');
+        } else {
+            const error = await res.json();
+            showToast('Error: ' + (error.detail || 'Failed to add supplier'), 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+}
+
+async function handleAddPayment(e) {
+    e.preventDefault();
+    
+    const payment = {
+        supplier_id: parseInt($('payment-supplier-id')?.value),
+        amount: parseFloat($('payment-amount')?.value),
+        due_date: new Date($('payment-due-date')?.value).toISOString(),
+        notes: $('payment-notes')?.value || undefined
+    };
+    
+    try {
+        const res = await fetch(`${API_BASE}/suppliers/payments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify(payment)
+        });
+        
+        if (res.ok) {
+            paymentModal?.classList.remove('active');
+            paymentForm?.reset();
+            await loadSuppliers();
+            showToast('Payment recorded successfully');
+        } else {
+            const error = await res.json();
+            showToast('Error: ' + (error.detail || 'Failed to record payment'), 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+}
+
+async function loadRiskAnalysis() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const risk = await fetch(
+            `${API_BASE}/forecast/${currentBusinessId}/risk-alert`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        if ($('risk-overall-score')) $('risk-overall-score').textContent = risk.risk_score || 0;
+        
+        const level = risk.risk_level?.toLowerCase() || 'low';
+        const levelEl = $('risk-overall-level');
+        if (levelEl) {
+            levelEl.textContent = risk.risk_level || 'LOW';
+            levelEl.className = `badge ${level}`;
+        }
+        
+        if (risk.summary) {
+            if ($('risk-volatility')) $('risk-volatility').textContent = formatKES(risk.summary.volatility || 0);
+            if ($('risk-negative-days')) $('risk-negative-days').textContent = risk.summary.negative_days || 0;
+        }
+        
+        // Alerts
+        const alertsEl = $('risk-alerts-list');
+        if (alertsEl) {
+            if (risk.alerts?.length) {
+                alertsEl.innerHTML = risk.alerts.map(a => `
+                    <div class="alert-item ${a.level.toLowerCase()}">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <div class="alert-content">
+                            <div class="alert-title">${a.level} Risk Alert</div>
+                            <div class="alert-message">${a.message}</div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                alertsEl.innerHTML = '';
+            }
+        }
+        
+        // Get forecast for feature importance
+        const forecast = await fetch(
+            `${API_BASE}/forecast/${currentBusinessId}/30days`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        if (forecast.hybrid_model?.feature_importance && $('risk-factors-grid')) {
+            const factors = Object.entries(forecast.hybrid_model.feature_importance)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 6);
+            
+            $('risk-factors-grid').innerHTML = factors.map(([name, value]) => `
+                <div class="factor-item">
+                    <div class="factor-name">${name.replace(/_/g, ' ')}</div>
+                    <div class="factor-bar">
+                        <div class="factor-progress" style="width: ${value * 100}%"></div>
+                    </div>
+                    <div class="factor-value">${(value * 100).toFixed(1)}% importance</div>
+                </div>
+            `).join('');
+        }
+        
+    } catch (err) {
+        console.error('Error loading risk analysis:', err);
+    }
+}
+
+// Charts
+async function loadCashflowChart() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const data = await fetch(
+            `${API_BASE}/transactions/analysis/daily-totals?business_id=${currentBusinessId}&days=30`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        const ctx = document.getElementById('cashflow-chart')?.getContext('2d');
+        if (!ctx || !data.length) return;
+        
+        if (charts.cashflow) charts.cashflow.destroy();
+        
+        charts.cashflow = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.map(d => new Date(d.date).toLocaleDateString()),
+                datasets: [
+                    {
+                        label: 'Income (KES)',
+                        data: data.map(d => d.income),
+                        borderColor: '#10B981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Expense (KES)',
+                        data: data.map(d => d.expense),
+                        borderColor: '#EF4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Net (KES)',
+                        data: data.map(d => d.net),
+                        borderColor: '#4F46E5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' }
+                },
+                scales: {
+                    y: {
+                        ticks: {
+                            callback: function(value) {
+                                return 'KES ' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Error loading cashflow chart:', err);
+    }
+}
+
+async function loadCategoryChart() {
+    if (!currentBusinessId) return;
+    
+    try {
+        const data = await fetch(
+            `${API_BASE}/transactions/analysis/by-category?business_id=${currentBusinessId}&days=30`,
+            { headers: { 'Authorization': `Bearer ${authToken}` } }
+        ).then(r => r.json());
+        
+        const ctx = document.getElementById('category-chart')?.getContext('2d');
+        if (!ctx || !data.length) return;
+        
+        if (charts.category) charts.category.destroy();
+        
+        const topCategories = data.slice(0, 5);
+        
+        charts.category = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: topCategories.map(d => d.category),
+                datasets: [{
+                    data: topCategories.map(d => d.total),
+                    backgroundColor: [
+                        '#4F46E5',
+                        '#10B981',
+                        '#F59E0B',
+                        '#EF4444',
+                        '#8B5CF6'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                let value = context.raw || 0;
+                                return `${label}: KES ${value.toLocaleString()}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Error loading category chart:', err);
+    }
+}
+
+function createForecastChart(forecast) {
+    if (!forecast || !forecast.length) return;
+    
+    const ctx = document.getElementById('forecast-chart')?.getContext('2d');
+    if (!ctx) return;
+    
+    if (charts.forecast) charts.forecast.destroy();
+    
+    charts.forecast = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: forecast.map(d => new Date(d.date).toLocaleDateString()),
+            datasets: [
+                {
+                    label: 'Predicted (KES)',
+                    data: forecast.map(d => d.hybrid_prediction),
+                    borderColor: '#4F46E5',
+                    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                    tension: 0.4
+                },
+                {
+                    label: 'Upper Bound (KES)',
+                    data: forecast.map(d => d.upper_bound),
+                    borderColor: 'rgba(79, 70, 229, 0.3)',
+                    borderDash: [5, 5],
+                    fill: false
+                },
+                {
+                    label: 'Lower Bound (KES)',
+                    data: forecast.map(d => d.lower_bound),
+                    borderColor: 'rgba(79, 70, 229, 0.3)',
+                    borderDash: [5, 5],
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            let value = context.raw || 0;
+                            return `${label}: KES ${value.toLocaleString()}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    ticks: {
+                        callback: function(value) {
+                            return 'KES ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Global functions
+window.selectBusiness = function(id) {
+    currentBusinessId = id;
+    localStorage.setItem('currentBusinessId', id);
+    if (businessSelect) businessSelect.value = id;
+    loadUserData();
+    showToast(`Business ${id} selected`);
+};
+
+// Inventory functions
+window.openStockModal = function(itemId, itemName) {
+    $('stock-item-id').value = itemId;
+    $('stock-item-name').textContent = itemName;
+    $('stock-quantity').value = '';
+    $('stock-type').value = 'add';
+    $('stock-notes').value = '';
+    stockModal?.classList.add('active');
+};
+
+window.deleteInventoryItem = async function(itemId) {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/inventory/${itemId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (res.ok) {
+            await loadInventory();
+            showToast('Item deleted successfully');
+        } else {
+            showToast('Failed to delete item', 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+};
+
+function openInventoryModal() {
+    inventoryForm?.reset();
+    inventoryModal?.classList.add('active');
+}
+
+// Supplier functions
+function openSupplierModal() {
+    supplierForm?.reset();
+    supplierModal?.classList.add('active');
+}
+
+window.openPaymentModal = function(supplierId, supplierName) {
+    $('payment-supplier-id').value = supplierId;
+    $('payment-supplier-name').textContent = supplierName;
+    
+    // Set default due date to 30 days from now
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 30);
+    $('payment-due-date').value = dueDate.toISOString().split('T')[0];
+    
+    $('payment-amount').value = '';
+    $('payment-notes').value = '';
+    paymentModal?.classList.add('active');
+};
+
+window.markPaymentPaid = async function(paymentId) {
+    if (!confirm('Mark this payment as paid?')) return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/suppliers/payments/${paymentId}/pay`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (res.ok) {
+            await loadSuppliers();
+            showToast('Payment marked as paid');
+        } else {
+            showToast('Failed to mark payment', 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+};
+
+window.deleteSupplier = async function(supplierId) {
+    if (!confirm('Are you sure you want to delete this supplier?')) return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/suppliers/${supplierId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (res.ok) {
+            await loadSuppliers();
+            showToast('Supplier deleted successfully');
+        } else {
+            showToast('Failed to delete supplier', 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+};
+
+window.deletePayment = async function(paymentId) {
+    if (!confirm('Are you sure you want to delete this payment?')) return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/suppliers/payments/${paymentId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (res.ok) {
+            await loadSuppliers();
+            showToast('Payment deleted successfully');
+        } else {
+            showToast('Failed to delete payment', 'error');
+        }
+    } catch (err) {
+        showToast('Network error', 'error');
+    }
+};
+
+console.log('✅ SmartPesa ready with KES currency, Inventory, and Supplier Management');
