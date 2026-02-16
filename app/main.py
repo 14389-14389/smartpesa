@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routers
-from app.routes import users, businesses, transactions, forecast, inventory, suppliers, credit
+from app.routes import users, businesses, transactions, forecast, inventory, suppliers, credit, password
 
 # Import middleware
 from app.middleware.logging import RequestLoggingMiddleware, AuditLogMiddleware
@@ -45,6 +45,7 @@ app.include_router(forecast.router)
 app.include_router(inventory.router)
 app.include_router(suppliers.router)
 app.include_router(credit.router)
+app.include_router(password.router)
 
 @app.get("/")
 def root():
