@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SmartPesa Dashboard</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f0f2f5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { background: #4F46E5; color: white; padding: 30px; border-radius: 8px; text-align: center; }
+        .card { background: white; padding: 30px; border-radius: 8px; margin: 20px 0; text-align: center; }
+        button { padding: 12px 30px; background: #4F46E5; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .success { color: #16a34a; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ SmartPesa</h1>
+            <p>You are logged in successfully!</p>
+        </div>
+        
+        <div class="card">
+            <h2>Authentication Working!</h2>
+            <p class="success">Your login was successful and you're now viewing the dashboard.</p>
+            <p><strong>Token:</strong> <span style="font-size: 12px; word-break: break-all;">{{TOKEN}}</span></p>
+            <button onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <script>
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/';
+        }
+        
+        // Display token
+        const token = localStorage.getItem('authToken');
+        if (token) {
+            document.querySelector('span').textContent = token;
+        } else {
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>
