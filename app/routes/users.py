@@ -2,6 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app import models, schemas, auth
 from app.database import get_db
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -31,27 +35,58 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=schemas.Token)
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
-    # Find user
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    logger.info(f"Login attempt for email: {user.email}")
     
-    # Verify credentials
-    if not db_user or not auth.verify_password(user.password, db_user.hashed_password):
+    try:
+        # Find user
+        db_user = db.query(models.User).filter(models.User.email == user.email).first()
+        logger.info(f"User found: {db_user is not None}")
+        
+        if not db_user:
+            logger.warning(f"User not found: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Verify password
+        password_valid = auth.verify_password(user.password, db_user.hashed_password)
+        logger.info(f"Password valid: {password_valid}")
+        
+        if not password_valid:
+            logger.warning(f"Invalid password for user: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Create token
+        access_token = auth.create_access_token(data={"sub": db_user.email})
+        logger.info(f"Login successful for: {user.email}")
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during login: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
         )
-    
-    # Create token
-    access_token = auth.create_access_token(data={"sub": db_user.email})
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
 
 @router.get("/me", response_model=schemas.UserResponse)
 def get_current_user(
     current_user: models.User = Depends(auth.get_current_user)
 ):
     return current_user
+
+@router.get("/test")
+def test():
+    return {"message": "Users route is working", "status": "ok"}
