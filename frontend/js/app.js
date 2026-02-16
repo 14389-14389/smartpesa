@@ -1,7 +1,9 @@
+// API_BASE is loaded from config.js
+const API_BASE = typeof API_BASE !== "undefined" ? API_BASE : "http://localhost:8000";
+
 // SmartPesa - Professional Frontend with Fixed Authentication
 console.log('🚀 SmartPesa initializing...');
 
-const API_BASE = 'http://localhost:8000';
 let authToken = localStorage.getItem('authToken');
 let currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
 let currentBusinessId = localStorage.getItem('currentBusinessId');
