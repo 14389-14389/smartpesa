@@ -1,0 +1,497 @@
+const API_BASE = "http://localhost:8000/api/v1";
+let currentBusinessId = localStorage.getItem('currentBusinessId') || null;
+
+console.log('🚀 SmartPesa starting...');
+console.log('API URL:', API_BASE);
+console.log('Current Business ID:', currentBusinessId);
+
+// Toast notification
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 16px 24px;
+        background: white;
+        border-left: 4px solid ${type === 'success' ? '#10B981' : '#EF4444'};
+        border-radius: 8px;
+        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+        z-index: 1000;
+        animation: slideIn 0.3s ease;
+    `;
+    toast.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}" 
+               style="color: ${type === 'success' ? '#10B981' : '#EF4444'}; font-size: 20px;"></i>
+            <span style="color: #1e293b; font-weight: 500;">${message}</span>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+// Check if logged in on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM loaded');
+    
+    // If already logged in, go to dashboard
+    if (localStorage.getItem('authToken')) {
+        window.location.href = '/dashboard.html';
+        return;
+    }
+    
+    // Login form handler
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const loginBtn = e.target.querySelector('button[type="submit"]');
+            
+            // Show loading
+            const originalText = loginBtn.innerHTML;
+            loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
+            loginBtn.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_BASE}/users/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    localStorage.setItem('authToken', data.access_token);
+                    localStorage.setItem('currentUser', JSON.stringify({ email }));
+                    
+                    showToast('Login successful! Redirecting...', 'success');
+                    
+                    setTimeout(() => {
+                        window.location.href = '/dashboard.html';
+                    }, 1000);
+                } else {
+                    showToast(data.detail || 'Login failed', 'error');
+                    loginBtn.innerHTML = originalText;
+                    loginBtn.disabled = false;
+                }
+            } catch (err) {
+                showToast('Network error - backend unreachable', 'error');
+                loginBtn.innerHTML = originalText;
+                loginBtn.disabled = false;
+            }
+        });
+    }
+    
+    // Register link
+    const showRegister = document.getElementById('show-register');
+    if (showRegister) {
+        showRegister.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('login-screen').classList.remove('active');
+            document.getElementById('register-screen').classList.add('active');
+        });
+    }
+    
+    // Login link
+    const showLogin = document.getElementById('show-login');
+    if (showLogin) {
+        showLogin.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('register-screen').classList.remove('active');
+            document.getElementById('login-screen').classList.add('active');
+        });
+    }
+});
+
+// ==================== INVENTORY FUNCTIONS ====================
+async function saveInventoryItem() {
+    // Get current business ID from localStorage
+    currentBusinessId = localStorage.getItem('currentBusinessId');
+    
+    if (!currentBusinessId) {
+        showToast('Please select a business first', 'error');
+        return;
+    }
+    
+    const item = {
+        name: document.getElementById('inv-name').value,
+        sku: document.getElementById('inv-sku').value || undefined,
+        quantity: parseFloat(document.getElementById('inv-quantity').value) || 0,
+        unit: document.getElementById('inv-unit').value,
+        price_per_unit: parseFloat(document.getElementById('inv-price').value) || 0,
+        reorder_level: parseFloat(document.getElementById('inv-reorder').value) || 10,
+        business_id: parseInt(currentBusinessId)
+    };
+
+    console.log('Saving inventory item:', item);
+
+    if (!item.name) {
+        showToast('Please enter item name', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/inventory/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify(item)
+        });
+
+        const data = await response.json();
+        console.log('Response:', data);
+
+        if (response.ok) {
+            showToast('Inventory item added successfully', 'success');
+            closeModal('inventory-modal');
+            document.getElementById('inventory-form').reset();
+            // Refresh the page to show new item
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.detail || 'Failed to add item', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding inventory:', error);
+        showToast('Error adding item', 'error');
+    }
+}
+
+// ==================== SUPPLIER FUNCTIONS ====================
+async function saveSupplier() {
+    // Get current business ID from localStorage
+    currentBusinessId = localStorage.getItem('currentBusinessId');
+    
+    if (!currentBusinessId) {
+        showToast('Please select a business first', 'error');
+        return;
+    }
+    
+    const supplier = {
+        name: document.getElementById('sup-name').value,
+        contact_person: document.getElementById('sup-contact').value || undefined,
+        phone: document.getElementById('sup-phone').value || undefined,
+        email: document.getElementById('sup-email').value || undefined,
+        payment_terms: document.getElementById('sup-terms').value || undefined,
+        business_id: parseInt(currentBusinessId)
+    };
+
+    console.log('Saving supplier:', supplier);
+
+    if (!supplier.name) {
+        showToast('Please enter supplier name', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/suppliers/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify(supplier)
+        });
+
+        const data = await response.json();
+        console.log('Response:', data);
+
+        if (response.ok) {
+            showToast('Supplier added successfully', 'success');
+            closeModal('supplier-modal');
+            document.getElementById('supplier-form').reset();
+            // Refresh the page to show new supplier
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.detail || 'Failed to add supplier', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding supplier:', error);
+        showToast('Error adding supplier', 'error');
+    }
+}
+
+// ==================== TRANSACTION FUNCTIONS ====================
+async function saveTransaction() {
+    currentBusinessId = localStorage.getItem('currentBusinessId');
+    
+    if (!currentBusinessId) {
+        showToast('Please select a business first', 'error');
+        return;
+    }
+    
+    const transaction = {
+        amount: parseFloat(document.getElementById('tx-amount')?.value) || 0,
+        type: document.getElementById('tx-type')?.value || 'income',
+        category: document.getElementById('tx-category')?.value || 'Sales',
+        description: document.getElementById('tx-description')?.value || '',
+        business_id: parseInt(currentBusinessId)
+    };
+
+    if (!transaction.amount) {
+        showToast('Please enter amount', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/transactions/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify(transaction)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Transaction added successfully', 'success');
+            closeModal('transaction-modal');
+            document.getElementById('transaction-form')?.reset();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.detail || 'Failed to add transaction', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding transaction:', error);
+        showToast('Error adding transaction', 'error');
+    }
+}
+
+// ==================== BUSINESS FUNCTIONS ====================
+async function saveBusiness() {
+    const businessName = document.getElementById('business-name')?.value;
+    const businessType = document.getElementById('business-type')?.value || 'retail';
+    const businessCurrency = document.getElementById('business-currency')?.value || 'KES';
+
+    if (!businessName) {
+        showToast('Please enter business name', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/businesses/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                name: businessName,
+                type: businessType,
+                currency: businessCurrency
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Business created successfully!', 'success');
+            closeModal('business-modal');
+            document.getElementById('business-form')?.reset();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.detail || 'Failed to create business', 'error');
+        }
+    } catch (error) {
+        console.error('Error creating business:', error);
+        showToast('Error creating business', 'error');
+    }
+}
+
+// ==================== PAYMENT FUNCTIONS ====================
+async function savePayment() {
+    const paymentModal = document.getElementById('payment-modal');
+    const supplierId = paymentModal?.dataset.supplierId;
+    const amount = parseFloat(document.getElementById('payment-amount')?.value) || 0;
+    const method = document.getElementById('payment-method')?.value || 'bank_transfer';
+    const date = document.getElementById('payment-date')?.value;
+    const notes = document.getElementById('payment-notes')?.value || '';
+
+    if (!supplierId || !amount) {
+        showToast('Please enter payment amount', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/suppliers/payments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                supplier_id: parseInt(supplierId),
+                amount: amount,
+                method: method,
+                payment_date: date,
+                notes: notes
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showToast('Payment recorded successfully', 'success');
+            closeModal('payment-modal');
+            document.getElementById('payment-form')?.reset();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast(data.detail || 'Failed to record payment', 'error');
+        }
+    } catch (error) {
+        console.error('Error recording payment:', error);
+        showToast('Error recording payment', 'error');
+    }
+}
+
+// ==================== MODAL HELPERS ====================
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.add('active');
+    }
+}
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+// ==================== ATTACH EVENT LISTENERS ====================
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Setting up event listeners...');
+    
+    // Only run these on dashboard page
+    if (window.location.pathname.includes('dashboard.html')) {
+        
+        // Inventory form submission
+        const inventoryForm = document.getElementById('inventory-form');
+        if (inventoryForm) {
+            inventoryForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveInventoryItem();
+            });
+            console.log('✅ Inventory form handler attached');
+        }
+
+        // Supplier form submission
+        const supplierForm = document.getElementById('supplier-form');
+        if (supplierForm) {
+            supplierForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveSupplier();
+            });
+            console.log('✅ Supplier form handler attached');
+        }
+        
+        // Transaction form submission
+        const transactionForm = document.getElementById('transaction-form');
+        if (transactionForm) {
+            transactionForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveTransaction();
+            });
+            console.log('✅ Transaction form handler attached');
+        }
+        
+        // Business form submission
+        const businessForm = document.getElementById('business-form');
+        if (businessForm) {
+            businessForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveBusiness();
+            });
+            console.log('✅ Business form handler attached');
+        }
+        
+        // Payment form submission
+        const paymentForm = document.getElementById('payment-form');
+        if (paymentForm) {
+            paymentForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                savePayment();
+            });
+            console.log('✅ Payment form handler attached');
+        }
+
+        // Add click handlers for add buttons
+        const addInventoryBtn = document.getElementById('add-inventory-btn');
+        if (addInventoryBtn) {
+            addInventoryBtn.addEventListener('click', () => {
+                openModal('inventory-modal');
+            });
+            console.log('✅ Add inventory button handler attached');
+        }
+
+        const addSupplierBtn = document.getElementById('add-supplier-btn');
+        if (addSupplierBtn) {
+            addSupplierBtn.addEventListener('click', () => {
+                openModal('supplier-modal');
+            });
+            console.log('✅ Add supplier button handler attached');
+        }
+        
+        const addTransactionBtn = document.getElementById('add-transaction-btn');
+        if (addTransactionBtn) {
+            addTransactionBtn.addEventListener('click', () => {
+                openModal('transaction-modal');
+            });
+            console.log('✅ Add transaction button handler attached');
+        }
+        
+        const addBusinessBtn = document.getElementById('add-business-btn');
+        if (addBusinessBtn) {
+            addBusinessBtn.addEventListener('click', () => {
+                openModal('business-modal');
+            });
+            console.log('✅ Add business button handler attached');
+        }
+    }
+
+    // Close modal when clicking X (works on all pages)
+    document.querySelectorAll('.close, .modal-close, .btn-cancel').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const modal = this.closest('.modal');
+            if (modal) modal.classList.remove('active');
+        });
+    });
+    
+    // Close modal when clicking outside
+    window.addEventListener('click', function(e) {
+        if (e.target.classList.contains('modal')) {
+            e.target.classList.remove('active');
+        }
+    });
+});
+
+// Logout function
+function logout() {
+    localStorage.clear();
+    showToast('Logged out successfully', 'success');
+    setTimeout(() => {
+        window.location.href = '/index.html';
+    }, 1000);
+}
+
+// Make functions available globally
+window.saveInventoryItem = saveInventoryItem;
+window.saveSupplier = saveSupplier;
+window.saveTransaction = saveTransaction;
+window.saveBusiness = saveBusiness;
+window.savePayment = savePayment;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.logout = logout;
+
+console.log('✅ All SmartPesa functions loaded');
