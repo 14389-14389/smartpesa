@@ -25,6 +25,7 @@ class Supplier(Base):
     # Relationships
     business = relationship("Business", back_populates="suppliers")
     payments = relationship("Payment", back_populates="supplier", cascade="all, delete-orphan")
+    purchase_batches = relationship("PurchaseBatch", back_populates="supplier")
     
     def to_dict(self):
         return {
@@ -53,11 +54,15 @@ class Payment(Base):
     reference = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
     paid = Column(Boolean, default=False)
+    # NEW: Link to transactions table for profit analysis
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
     
     # Relationships
     supplier = relationship("Supplier", back_populates="payments")
+    # Optional: uncomment if you want direct access to the transaction
+    # transaction = relationship("Transaction", foreign_keys=[transaction_id])
     
     def to_dict(self):
         return {
@@ -70,6 +75,7 @@ class Payment(Base):
             "reference": self.reference,
             "notes": self.notes,
             "paid": self.paid,
+            "transaction_id": self.transaction_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

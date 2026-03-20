@@ -28,12 +28,18 @@ class ForecastService:
     
     def generate_forecast(self, business_id: int, days_forward: int = 30):
         """Generate forecast for a business"""
-        # Prepare data
-        data = self.prepare_data_for_forecast(business_id)
-        
-        if data is None or len(data) < 30:
+        # Get daily aggregated data (for length check and base data)
+        daily_data = self.pipeline.prepare_daily_data(business_id, 365)   # fixed: positional argument
+        if daily_data.empty or len(daily_data) < 30:
             return {
                 'error': 'Insufficient data for forecasting. Need at least 30 days of data.'
+            }
+        
+        # Engineer features
+        data = self.pipeline.engineer_features(daily_data)
+        if data.empty:
+            return {
+                'error': 'Could not engineer features from data.'
             }
         
         # Define feature columns for hybrid model
@@ -57,7 +63,7 @@ class ForecastService:
         hybrid_metrics = self.hybrid.train(data, available_features)
         
         # Generate future dates
-        last_date = data['date'].max()
+        last_date = daily_data['date'].max()
         future_dates = pd.date_range(
             start=last_date + timedelta(days=1),
             periods=days_forward,
@@ -76,13 +82,13 @@ class ForecastService:
         future_df['is_month_start'] = (future_df['ds'].dt.is_month_start).astype(int)
         future_df['is_month_end'] = (future_df['ds'].dt.is_month_end).astype(int)
         
-        # For lag features, use last known values from data
+        # For lag features, use last known values from daily_data
         for lag in [1, 2, 3, 7]:
-            future_df[f'net_lag_{lag}'] = data['net'].iloc[-lag] if len(data) >= lag else 0
+            future_df[f'net_lag_{lag}'] = daily_data['net'].iloc[-lag] if len(daily_data) >= lag else 0
         
-        # For rolling features, use recent averages
-        future_df['net_rolling_mean_7'] = data['net'].tail(7).mean()
-        future_df['net_rolling_std_7'] = data['net'].tail(7).std()
+        # For rolling features, use recent averages from daily_data
+        future_df['net_rolling_mean_7'] = daily_data['net'].tail(7).mean()
+        future_df['net_rolling_std_7'] = daily_data['net'].tail(7).std()
         future_df['volatility_7d'] = future_df['net_rolling_std_7'] / (future_df['net_rolling_mean_7'].abs() + 1)
         
         # Generate predictions
@@ -100,14 +106,14 @@ class ForecastService:
             'forecast_date': datetime.utcnow().isoformat(),
             'days_forward': days_forward,
             'data_summary': {
-                'total_days': len(data),
+                'total_days': len(daily_data),
                 'date_range': {
-                    'start': date_to_str(data['date'].min()),
-                    'end': date_to_str(data['date'].max())
+                    'start': date_to_str(daily_data['date'].min()),
+                    'end': date_to_str(daily_data['date'].max())
                 },
-                'total_income': float(data['income'].sum()),
-                'total_expense': float(data['expense'].sum()),
-                'avg_daily_net': float(data['net'].mean())
+                'total_income': float(daily_data['income'].sum()),
+                'total_expense': float(daily_data['expense'].sum()),
+                'avg_daily_net': float(daily_data['net'].mean())
             },
             'baseline_model': {
                 'metrics': baseline_metrics,
@@ -136,7 +142,7 @@ class ForecastService:
                     for i in range(len(hybrid_forecast['dates']))
                 ]
             },
-            'risk_analysis': self.analyze_risk(hybrid_forecast, data)
+            'risk_analysis': self.analyze_risk(hybrid_forecast, daily_data)
         }
     
     def analyze_risk(self, forecast, historical_data):

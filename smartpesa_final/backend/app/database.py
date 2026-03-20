@@ -50,17 +50,17 @@ def check_connection():
         db = SessionLocal()
         db.execute(text("SELECT 1"))
         db.close()
-        print("✅ MySQL connection successful")
+        print("MySQL connection successful")
         return True
     except Exception as e:
-        print(f"❌ MySQL connection failed: {e}")
+        print(f"MySQL connection failed: {e}")
         return False
 
 def init_db():
     """Initialize database - create all tables"""
     try:
         Base.metadata.create_all(bind=engine)
-        print("✅ Database tables created/verified")
+        print("Database tables created/verified")
     except Exception as e:
-        print(f"❌ Error creating tables: {e}")
+        print(f"Error creating tables: {e}")
         raise e

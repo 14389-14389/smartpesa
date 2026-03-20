@@ -26,6 +26,7 @@ class Business(Base):
     suppliers = relationship("Supplier", back_populates="business", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="business", cascade="all, delete-orphan")
     credit_scores = relationship("CreditScore", back_populates="business", cascade="all, delete-orphan")
+    sales = relationship("Sale", back_populates="business", cascade="all, delete-orphan")
     
     def to_dict(self):
         return {

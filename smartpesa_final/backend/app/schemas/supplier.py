@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 
 # Supplier schemas
@@ -25,37 +25,48 @@ class SupplierUpdate(BaseModel):
 class Supplier(SupplierBase):
     id: int
     business_id: int
+    is_active: bool
     created_at: datetime
-    
+    updated_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
 
-# Supplier Payment schemas
+# Supplier Payment schemas (matches the Payment model)
 class SupplierPaymentBase(BaseModel):
     supplier_id: int
     amount: float
-    due_date: datetime
+    payment_date: date
+    due_date: Optional[date] = None
+    method: Optional[str] = "bank_transfer"
+    reference: Optional[str] = None
     notes: Optional[str] = None
 
 class SupplierPaymentCreate(SupplierPaymentBase):
     pass
 
 class SupplierPaymentUpdate(BaseModel):
-    status: Optional[str] = None
-    paid_date: Optional[datetime] = None
+    amount: Optional[float] = None
+    payment_date: Optional[date] = None
+    due_date: Optional[date] = None
+    method: Optional[str] = None
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+    paid: Optional[bool] = None
     transaction_id: Optional[int] = None
 
 class SupplierPayment(SupplierPaymentBase):
     id: int
+    paid: bool
     paid_date: Optional[datetime] = None
-    status: str
     transaction_id: Optional[int] = None
     created_at: datetime
-    
+    updated_at: Optional[datetime] = None
+
     class Config:
         from_attributes = True
 
-# Supplier with payments
+# Supplier with payments and calculated fields
 class SupplierWithPayments(Supplier):
     payments: List[SupplierPayment] = []
     total_outstanding: Optional[float] = 0

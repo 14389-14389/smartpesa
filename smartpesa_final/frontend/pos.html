@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartPesa - Point of Sale</title>
+    <style>
+        * { box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background: #f5f7fa; margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #2c3e50; }
+        .pos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #2c3e50; }
+        select, input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }
+        button { background: #27ae60; color: white; border: none; padding: 12px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; }
+        button:hover { background: #2ecc71; }
+        .cart-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .cart-table th, .cart-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        .cart-table th { background: #f8f9fa; }
+        .total { text-align: right; font-size: 20px; margin-top: 10px; }
+        .alert { padding: 10px; border-radius: 5px; margin-top: 10px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .loading { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛒 Point of Sale</h1>
+        <div class="pos-grid">
+            <!-- Product Selection -->
+            <div class="card">
+                <h2>Add Item</h2>
+                <div class="form-group">
+                    <label>Product</label>
+                    <select id="productSelect" required>
+                        <option value="">Loading products...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Quantity</label>
+                    <input type="number" id="quantity" min="1" value="1">
+                </div>
+                <button id="addToCartBtn">Add to Cart</button>
+            </div>
+
+            <!-- Sale Details -->
+            <div class="card">
+                <h2>Sale Details</h2>
+                <div class="form-group">
+                    <label>Business ID</label>
+                    <input type="number" id="businessId" value="1" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Payment Method</label>
+                    <select id="paymentMethod">
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                        <option value="mobile">Mobile</option>
+                        <option value="credit">Credit</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Customer Name (optional)</label>
+                    <input type="text" id="customerName">
+                </div>
+            </div>
+        </div>
+
+        <!-- Cart -->
+        <div class="card">
+            <h2>Cart</h2>
+            <table class="cart-table">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Price</th>
+                        <th>Qty</th>
+                        <th>Subtotal</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cartBody"></tbody>
+            </table>
+            <div class="total">
+                <strong>Total: Ksh <span id="totalAmount">0.00</span></strong>
+            </div>
+            <button id="completeSaleBtn">Complete Sale</button>
+        </div>
+
+        <div id="message" class="alert" style="display: none;"></div>
+    </div>
+
+    <script>
+        // State
+        let products = [];
+        let cart = [];
+        let token = localStorage.getItem('token');
+
+        // Redirect to login if no token (adjust to your login page)
+        if (!token) {
+            // For now, we'll just show an alert and you can manually set token
+            alert('Please log in first and set token in localStorage');
+        }
+
+        // DOM elements
+        const productSelect = document.getElementById('productSelect');
+        const quantityInput = document.getElementById('quantity');
+        const addBtn = document.getElementById('addToCartBtn');
+        const cartBody = document.getElementById('cartBody');
+        const totalSpan = document.getElementById('totalAmount');
+        const completeBtn = document.getElementById('completeSaleBtn');
+        const messageDiv = document.getElementById('message');
+        const businessIdInput = document.getElementById('businessId');
+        const paymentMethodSelect = document.getElementById('paymentMethod');
+        const customerNameInput = document.getElementById('customerName');
+
+        // Load products from inventory API
+        async function loadProducts() {
+            try {
+                const res = await fetch('http://localhost:8000/api/v1/inventory/?business_id=1', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error('Failed to load products');
+                products = await res.json();
+                productSelect.innerHTML = '<option value="">Select product</option>';
+                products.forEach(p => {
+                    productSelect.innerHTML += `<option value="${p.id}" data-price="${p.price_per_unit}">${p.name} (Ksh ${p.price_per_unit}) - Stock: ${p.quantity}</option>`;
+                });
+            } catch (err) {
+                showMessage('Error loading products: ' + err.message, 'error');
+            }
+        }
+
+        // Add to cart
+        function addToCart() {
+            const productId = productSelect.value;
+            if (!productId) {
+                showMessage('Please select a product', 'error');
+                return;
+            }
+            const product = products.find(p => p.id == productId);
+            const quantity = parseInt(quantityInput.value);
+            if (quantity < 1) {
+                showMessage('Quantity must be at least 1', 'error');
+                return;
+            }
+            if (quantity > product.quantity) {
+                showMessage(`Only ${product.quantity} in stock`, 'error');
+                return;
+            }
+
+            cart.push({
+                product_id: product.id,
+                name: product.name,
+                unit_price: product.price_per_unit,
+                quantity: quantity
+            });
+
+            renderCart();
+            showMessage('Item added', 'success');
+        }
+
+        // Remove from cart
+        function removeFromCart(index) {
+            cart.splice(index, 1);
+            renderCart();
+        }
+
+        // Render cart table
+        function renderCart() {
+            let html = '';
+            let total = 0;
+            cart.forEach((item, idx) => {
+                const subtotal = item.unit_price * item.quantity;
+                total += subtotal;
+                html += `<tr>
+                    <td>${item.name}</td>
+                    <td>${item.unit_price.toFixed(2)}</td>
+                    <td>${item.quantity}</td>
+                    <td>${subtotal.toFixed(2)}</td>
+                    <td><button onclick="removeFromCart(${idx})">❌</button></td>
+                </tr>`;
+            });
+            cartBody.innerHTML = html;
+            totalSpan.textContent = total.toFixed(2);
+        }
+
+        // Complete sale
+        async function completeSale() {
+            if (cart.length === 0) {
+                showMessage('Cart is empty', 'error');
+                return;
+            }
+
+            const businessId = parseInt(businessIdInput.value);
+            const paymentMethod = paymentMethodSelect.value;
+            const customerName = customerNameInput.value.trim() || null;
+
+            const items = cart.map(item => ({
+                product_id: item.product_id,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                discount: 0
+            }));
+
+            const saleData = {
+                business_id: businessId,
+                payment_method: paymentMethod,
+                customer_name: customerName,
+                items: items
+            };
+
+            completeBtn.disabled = true;
+            completeBtn.textContent = 'Processing...';
+
+            try {
+                const res = await fetch('http://localhost:8000/api/v1/sales/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(saleData)
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Sale failed');
+                }
+
+                const sale = await res.json();
+                showMessage(`Sale completed! ID: ${sale.id}`, 'success');
+                cart = [];
+                renderCart();
+                loadProducts(); // refresh stock
+            } catch (err) {
+                showMessage('Error: ' + err.message, 'error');
+            } finally {
+                completeBtn.disabled = false;
+                completeBtn.textContent = 'Complete Sale';
+            }
+        }
+
+        // Show message
+        function showMessage(msg, type) {
+            messageDiv.textContent = msg;
+            messageDiv.className = `alert ${type}`;
+            messageDiv.style.display = 'block';
+            setTimeout(() => messageDiv.style.display = 'none', 5000);
+        }
+
+        // Event listeners
+        addBtn.addEventListener('click', addToCart);
+        completeBtn.addEventListener('click', completeSale);
+        window.removeFromCart = removeFromCart; // global for button
+
+        // Initial load
+        if (token) {
+            loadProducts();
+        }
+    </script>
+</body>
+</html>

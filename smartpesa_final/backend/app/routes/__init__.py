@@ -14,6 +14,15 @@ from .reports import router as reports_router
 from .notifications import router as notifications_router
 from .analytics import router as analytics_router
 
+# New routers for inventory tracking and POS
+from .purchases import router as purchases_router
+from .sales import router as sales_router
+
+# NEW: Employee and expense management
+from .employees import router as employees_router
+from .salary_payments import router as salary_payments_router
+from .expenses import router as expenses_router
+
 # Try to import optional routers
 try:
     from .webhooks import router as webhooks_router
@@ -32,5 +41,10 @@ __all__ = [
     'reports_router',
     'notifications_router',
     'analytics_router',
+    'purchases_router',
+    'sales_router',
+    'employees_router',          # added
+    'salary_payments_router',    # added
+    'expenses_router',           # added
     'webhooks_router'
 ]

@@ -26,6 +26,11 @@ class Inventory(Base):
     # Relationships
     business = relationship("Business", back_populates="inventory_items")
     
+    # Relationships for inventory tracking
+    purchase_batches = relationship("PurchaseBatch", back_populates="product", cascade="all, delete-orphan")
+    sale_items = relationship("SaleItem", back_populates="product", cascade="all, delete-orphan")
+    movements = relationship("InventoryMovement", back_populates="product", cascade="all, delete-orphan")
+    
     def to_dict(self):
         return {
             "id": self.id,

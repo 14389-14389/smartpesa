@@ -21,7 +21,10 @@ from app.routes import (
     users_router, businesses_router, transactions_router,
     forecast_router, inventory_router, suppliers_router,
     credit_router, password_router, reports_router,
-    notifications_router, analytics_router, webhooks_router
+    notifications_router, analytics_router, webhooks_router,
+    purchases_router, sales_router,
+    # NEW ROUTERS
+    employees_router, salary_payments_router, expenses_router
 )
 
 # Import database
@@ -31,9 +34,9 @@ from app import models
 # Create database tables
 try:
     models.Base.metadata.create_all(bind=engine)
-    logger.info("✅ Database tables ready")
+    logger.info("Database tables ready")
 except Exception as e:
-    logger.error(f"❌ Database error: {e}")
+    logger.error(f"Database error: {e}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -65,6 +68,12 @@ app.include_router(password_router, prefix="/api/v1/password", tags=["Password"]
 app.include_router(reports_router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["Analytics"])
+app.include_router(purchases_router, prefix="/api/v1/purchases", tags=["Purchases"])
+app.include_router(sales_router, prefix="/api/v1/sales", tags=["Sales"])
+# NEW ROUTES
+app.include_router(employees_router, prefix="/api/v1/employees", tags=["Employees"])
+app.include_router(salary_payments_router, prefix="/api/v1/salary-payments", tags=["Salary Payments"])
+app.include_router(expenses_router, prefix="/api/v1/expenses", tags=["Expenses"])
 
 if webhooks_router:
     app.include_router(webhooks_router, prefix="/api/v1/webhooks", tags=["Webhooks"])
@@ -92,4 +101,4 @@ async def health_check():
         "database": "connected"
     }
 
-logger.info("🚀 SmartPesa API is ready!")
+logger.info("✅ SmartPesa API is ready!")

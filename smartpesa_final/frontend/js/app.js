@@ -1,1109 +1,1766 @@
-const API_BASE = "http://localhost:8000/api/v1";
-let currentBusinessId = localStorage.getItem('currentBusinessId') || null;
-let authToken = localStorage.getItem('authToken');
-let currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+// ============================================
+// SmartPesa Main Application – Final Edition
+// ============================================
 
-console.log('🚀 SmartPesa starting...');
-console.log('API URL:', API_BASE);
-console.log('Current Business ID:', currentBusinessId);
-console.log('Auth Token:', authToken ? 'Present' : 'Not present');
+// State
+let currentUser = null;
+let currentBusinessId = null;
+let businesses = [];
+let inventoryItems = [];
+let suppliers = [];
+let transactions = [];
+let posCart = [];
+let lastSale = null;
 
-// Toast notification
-function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 16px 24px;
-        background: white;
-        border-left: 4px solid ${type === 'success' ? '#10B981' : type === 'error' ? '#EF4444' : '#3B82F6'};
-        border-radius: 8px;
-        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
-        z-index: 9999;
-        animation: slideIn 0.3s ease;
-        font-family: 'Inter', sans-serif;
-    `;
-    toast.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}" 
-               style="color: ${type === 'success' ? '#10B981' : type === 'error' ? '#EF4444' : '#3B82F6'}; font-size: 20px;"></i>
-            <span style="color: #1e293b; font-weight: 500;">${message}</span>
-        </div>
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+// DOM Elements
+const screens = {
+    login: document.getElementById('login-screen'),
+    register: document.getElementById('register-screen'),
+    dashboard: document.getElementById('dashboard-screen')
+};
+
+const views = {
+    dashboard: document.getElementById('dashboard-view'),
+    transactions: document.getElementById('transactions-view'),
+    forecast: document.getElementById('forecast-view'),
+    inventory: document.getElementById('inventory-view'),
+    suppliers: document.getElementById('suppliers-view'),
+    businesses: document.getElementById('businesses-view'),
+    risk: document.getElementById('risk-view'),
+    pos: document.getElementById('pos-view'),
+    profit: document.getElementById('profit-view'),
+    employees: document.getElementById('employees-view'),
+    expenses: document.getElementById('expenses-view')
+};
+
+const navItems = document.querySelectorAll('.nav-item');
+const pageTitle = document.getElementById('page-title');
+const businessSelect = document.getElementById('business-select');
+const userNameSpan = document.getElementById('user-name');
+const userEmailSpan = document.getElementById('user-email');
+const logoutBtn = document.getElementById('logout-btn');
+
+// Modals
+const inventoryModal = document.getElementById('inventory-modal');
+const stockModal = document.getElementById('stock-modal');
+const supplierModal = document.getElementById('supplier-modal');
+const paymentModal = document.getElementById('payment-modal');
+const addStockModal = document.getElementById('add-stock-modal');
+const receiptModal = document.getElementById('receipt-modal');
+const rankModal = document.getElementById('rank-modal');
+const employeeModal = document.getElementById('employee-modal');
+const salaryModal = document.getElementById('salary-modal');
+const expenseModal = document.getElementById('expense-modal');
+const businessModal = document.getElementById('business-modal');
+const editRankModal = document.getElementById('edit-rank-modal');
+const editEmployeeModal = document.getElementById('edit-employee-modal');
+
+// Charts
+let cashflowChart, categoryChart, profitChart, forecastChart;
+
+// Auto‑refresh timer
+let refreshInterval = null;
+
+// ============================================
+// Utility Functions
+// ============================================
+
+function showMessage(message, type = 'info') {
+    alert(message);
 }
 
-// API call helper
-async function apiCall(endpoint, options = {}) {
-    const defaultOptions = {
-        headers: {
-            'Content-Type': 'application/json',
-            ...(authToken && { 'Authorization': `Bearer ${authToken}` })
-        }
-    };
-    
-    try {
-        const response = await fetch(`${API_BASE}${endpoint}`, { ...defaultOptions, ...options });
-        
-        if (response.status === 401) {
-            localStorage.clear();
-            if (!window.location.pathname.includes('index.html')) {
-                window.location.href = '/index.html';
-            }
-            return null;
-        }
-        
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error('API Error:', error);
-        showToast('Network error - backend unreachable', 'error');
-        return null;
-    }
+function formatCurrency(amount) {
+    return 'KES ' + parseFloat(amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
-// Format currency
-function formatKES(amount) {
-    return new Intl.NumberFormat('en-KE', {
-        style: 'currency',
-        currency: 'KES',
-        minimumFractionDigits: 2
-    }).format(amount || 0);
-}
-
-// Format date
 function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-KE', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-    });
+    const d = new Date(dateString);
+    return d.toLocaleDateString('en-KE', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-// ==================== AUTHENTICATION ====================
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM loaded');
-    
-    // Check if on login page
-    if (window.location.pathname.includes('index.html') || window.location.pathname === '/') {
-        console.log('On login page');
-        
-        // If already logged in, go to dashboard
-        if (authToken) {
-            window.location.href = '/dashboard.html';
-            return;
-        }
-        
-        // Login form handler
-        const loginForm = document.getElementById('login-form');
-        if (loginForm) {
-            loginForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const email = document.getElementById('email').value;
-                const password = document.getElementById('password').value;
-                const loginBtn = e.target.querySelector('button[type="submit"]');
-                
-                const originalText = loginBtn.innerHTML;
-                loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
-                loginBtn.disabled = true;
-                
-                try {
-                    const response = await fetch(`${API_BASE}/users/login`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email, password })
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        localStorage.setItem('authToken', data.access_token);
-                        localStorage.setItem('currentUser', JSON.stringify({ email }));
-                        authToken = data.access_token;
-                        
-                        showToast('Login successful! Redirecting...', 'success');
-                        
-                        setTimeout(() => {
-                            window.location.href = '/dashboard.html';
-                        }, 1000);
-                    } else {
-                        showToast(data.detail || 'Login failed', 'error');
-                        loginBtn.innerHTML = originalText;
-                        loginBtn.disabled = false;
-                    }
-                } catch (err) {
-                    showToast('Network error - backend unreachable', 'error');
-                    loginBtn.innerHTML = originalText;
-                    loginBtn.disabled = false;
-                }
-            });
-        }
-        
-        // Toggle between login and register screens
-        const showRegister = document.getElementById('show-register');
-        if (showRegister) {
-            showRegister.addEventListener('click', (e) => {
-                e.preventDefault();
-                document.getElementById('login-screen').classList.remove('active');
-                document.getElementById('register-screen').classList.add('active');
-            });
-        }
-        
-        const showLogin = document.getElementById('show-login');
-        if (showLogin) {
-            showLogin.addEventListener('click', (e) => {
-                e.preventDefault();
-                document.getElementById('register-screen').classList.remove('active');
-                document.getElementById('login-screen').classList.add('active');
-            });
-        }
-    }
-    
-    // Check if on dashboard page
-    if (window.location.pathname.includes('dashboard.html')) {
-        console.log('On dashboard page');
-        
-        // Check authentication
-        if (!authToken) {
-            window.location.href = '/index.html';
-            return;
-        }
-        
-        // Set user info from localStorage
-        const userName = document.getElementById('user-name');
-        const userEmail = document.getElementById('user-email');
-        const userAvatar = document.getElementById('user-avatar');
-        
-        if (userName && currentUser.email) {
-            userName.textContent = currentUser.email.split('@')[0];
-        }
-        if (userEmail && currentUser.email) {
-            userEmail.textContent = currentUser.email;
-        }
-        if (userAvatar && currentUser.email) {
-            userAvatar.textContent = currentUser.email[0].toUpperCase();
-        }
-        
-        // Load dashboard data
-        setTimeout(() => {
-            loadDashboardData();
-        }, 500);
-        
-        // Set up logout button
-        const logoutBtn = document.getElementById('logout-btn');
-        if (logoutBtn) {
-            logoutBtn.addEventListener('click', logout);
-        }
-        
-        // Set up refresh button
-        const refreshBtn = document.getElementById('refresh-data');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', () => {
-                loadDashboardData();
-                showToast('Data refreshed', 'success');
-            });
-        }
-    }
-});
-
-// ==================== DASHBOARD FUNCTIONS ====================
-async function loadDashboardData() {
-    console.log('Loading dashboard data...');
-    
-    // Get current user info from API
-    const userInfo = await apiCall('/users/me');
-    if (userInfo) {
-        document.getElementById('user-name').textContent = userInfo.full_name || userInfo.email.split('@')[0];
-        document.getElementById('user-email').textContent = userInfo.email;
-        document.getElementById('user-avatar').textContent = (userInfo.full_name || userInfo.email)[0].toUpperCase();
-        
-        // Update currentUser in localStorage
-        currentUser = userInfo;
-        localStorage.setItem('currentUser', JSON.stringify(userInfo));
-    }
-    
-    // Load businesses
-    await loadBusinesses();
-    
-    if (currentBusinessId) {
-        // Load summary data
-        await loadSummaryData();
-        
-        // Load recent transactions
-        await loadRecentTransactions();
-        
-        // Load inventory alerts
-        await loadInventoryAlerts();
-        
-        // Load charts
-        await loadCharts();
-    }
+function getToken() {
+    return localStorage.getItem('token');
 }
 
-// ==================== BUSINESS FUNCTIONS ====================
-async function loadBusinesses() {
-    console.log('📊 Loading businesses...');
-    
+function setToken(token) {
+    localStorage.setItem('token', token);
+}
+
+function removeToken() {
+    localStorage.removeItem('token');
+}
+
+function authHeader() {
+    const token = getToken();
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+// ============================================
+// API Calls
+// ============================================
+
+async function apiRequest(endpoint, method = 'GET', data = null) {
+    const url = API_BASE + endpoint;
+    const headers = {
+        'Content-Type': 'application/json',
+        ...authHeader()
+    };
+    const options = { method, headers };
+    if (data) options.body = JSON.stringify(data);
     try {
-        const businesses = await apiCall('/businesses/');
-        console.log('Businesses loaded:', businesses);
-        
-        // Update business selector dropdown
-        updateBusinessSelector(businesses);
-        
-        // Update businesses view
-        updateBusinessesView(businesses);
-        
-        // Update current business ID
-        updateCurrentBusinessId(businesses);
-        
-        return businesses || [];
-    } catch (error) {
-        console.error('Error loading businesses:', error);
-        return [];
-    }
-}
-
-function updateBusinessSelector(businesses) {
-    const select = document.getElementById('business-select');
-    if (!select) {
-        console.log('Business select element not found');
-        return;
-    }
-    
-    select.innerHTML = '<option value="">Select Business</option>';
-    
-    if (businesses && businesses.length > 0) {
-        businesses.forEach(b => {
-            const option = document.createElement('option');
-            option.value = b.id;
-            option.textContent = b.name;
-            if (b.id == currentBusinessId) {
-                option.selected = true;
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            if (response.status === 401) {
+                removeToken();
+                stopAutoRefresh();
+                showScreen('login');
+                throw new Error('Session expired. Please login again.');
             }
-            select.appendChild(option);
-        });
-        console.log('✅ Business dropdown updated with', businesses.length, 'businesses');
-    } else {
-        console.log('No businesses to display in dropdown');
+            const errorData = await response.json().catch(() => ({}));
+            console.error('API error response:', errorData);
+            let errorMessage = '';
+            if (errorData.detail) {
+                if (Array.isArray(errorData.detail)) {
+                    errorMessage = errorData.detail.map(e => e.msg || e.message || JSON.stringify(e)).join('; ');
+                } else {
+                    errorMessage = errorData.detail;
+                }
+            } else if (Array.isArray(errorData)) {
+                errorMessage = errorData.map(e => e.msg || e.message || JSON.stringify(e)).join('; ');
+            } else if (typeof errorData === 'object') {
+                errorMessage = JSON.stringify(errorData);
+            } else {
+                errorMessage = errorData || `Request failed with status ${response.status}`;
+            }
+            throw new Error(errorMessage);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('API error:', error);
+        throw error;
     }
-    
-    // Add change event listener (remove existing first)
-    select.removeEventListener('change', handleBusinessChange);
-    select.addEventListener('change', handleBusinessChange);
 }
 
-function handleBusinessChange(e) {
-    if (e.target.value) {
-        currentBusinessId = e.target.value;
-        localStorage.setItem('currentBusinessId', currentBusinessId);
-        loadDashboardData();
-        showToast(`Switched to ${e.target.options[e.target.selectedIndex].text}`, 'success');
+// ============================================
+// Authentication
+// ============================================
+
+async function login(email, password) {
+    try {
+        const data = await apiRequest('/users/login', 'POST', { email, password });
+        setToken(data.access_token);
+        await loadUserProfile();
+        await loadBusinesses();
+        showScreen('dashboard');
+        showView('dashboard');
+        startAutoRefresh();
+    } catch (error) {
+        showMessage(error.message, 'error');
     }
 }
 
-function updateBusinessesView(businesses) {
-    const container = document.getElementById('businesses-grid');
-    if (!container) {
-        console.log('Businesses grid container not found');
+async function register(email, password) {
+    try {
+        await apiRequest('/users/register', 'POST', { email, password });
+        showMessage('Registration successful. Please login.', 'success');
+        showScreen('login');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+}
+
+async function loadUserProfile() {
+    try {
+        const user = await apiRequest('/users/me');
+        currentUser = user;
+        userNameSpan.textContent = user.full_name || user.email.split('@')[0];
+        userEmailSpan.textContent = user.email;
+    } catch (error) {
+        console.error('Failed to load user profile', error);
+        throw error;
+    }
+}
+
+// ============================================
+// Real‑time Auto‑Refresh
+// ============================================
+
+function startAutoRefresh() {
+    if (refreshInterval) clearInterval(refreshInterval);
+    refreshInterval = setInterval(() => {
+        const activeView = document.querySelector('.view.active')?.id.replace('-view', '');
+        if (activeView === 'inventory') {
+            loadInventory();
+        } else if (activeView === 'profit') {
+            loadProfitReport();
+        } else if (activeView === 'dashboard') {
+            loadTransactions();
+        } else if (activeView === 'pos') {
+            loadPosProducts();
+        } else if (activeView === 'employees') {
+            loadEmployeesView();
+        } else if (activeView === 'expenses') {
+            loadExpensesView();
+        } else if (activeView === 'suppliers') {
+            loadSuppliers();
+        }
+        // Forecast is NOT auto-refreshed – use manual refresh or period change
+    }, 100000);
+}
+
+function stopAutoRefresh() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+}
+
+// ============================================
+// Businesses
+// ============================================
+
+async function loadBusinesses() {
+    try {
+        businesses = await apiRequest('/businesses/');
+        renderBusinessSelect();
+        renderBusinessesGrid();
+        if (businesses.length > 0 && !currentBusinessId) {
+            currentBusinessId = businesses[0].id;
+            businessSelect.value = currentBusinessId;
+        }
+        if (currentBusinessId) {
+            loadDashboardData();
+        }
+    } catch (error) {
+        console.error('Failed to load businesses', error);
+    }
+}
+
+function renderBusinessSelect() {
+    let options = '<option value="">Select Business</option>';
+    businesses.forEach(b => {
+        options += `<option value="${b.id}">${b.name}</option>`;
+    });
+    businessSelect.innerHTML = options;
+    if (currentBusinessId) businessSelect.value = currentBusinessId;
+}
+
+function renderBusinessesGrid() {
+    const grid = document.getElementById('businesses-grid');
+    if (!grid) return;
+    if (businesses.length === 0) {
+        grid.innerHTML = '<p>No businesses found. Create one first.</p>';
         return;
     }
-    
-    if (!businesses || businesses.length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; grid-column: 1/-1;">No businesses found. Click "Add Business" to create one.</div>';
-        return;
-    }
-    
     let html = '';
-    businesses.forEach(business => {
-        const createdDate = business.created_at ? new Date(business.created_at).toLocaleDateString() : 'N/A';
-        const isActive = business.is_active ? 'Active' : 'Inactive';
-        const activeClass = business.is_active ? 'badge good-stock' : 'badge low-stock';
-        
+    businesses.forEach(b => {
         html += `
-            <div class="business-card" onclick="selectBusiness(${business.id})">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3>${business.name}</h3>
-                    <span class="${activeClass}">${isActive}</span>
-                </div>
-                <p><i class="fas fa-tag"></i> ${business.type || 'Not specified'}</p>
-                <p><i class="fas fa-calendar"></i> Created: ${createdDate}</p>
-                <p><i class="fas fa-money-bill-wave"></i> Currency: ${business.currency || 'KES'}</p>
+            <div class="business-card" onclick="selectBusiness(${b.id})">
+                <h3>${b.name}</h3>
+                <p>${b.type || 'Business'}</p>
+                <p>${b.currency || 'KES'}</p>
+                <button class="delete-btn" data-delete="business" data-id="${b.id}"><i class="fas fa-trash"></i></button>
             </div>
         `;
     });
-    
-    container.innerHTML = html;
-    console.log('✅ Businesses view updated with', businesses.length, 'businesses');
+    grid.innerHTML = html;
 }
 
-function updateCurrentBusinessId(businesses) {
-    if (!businesses || businesses.length === 0) {
-        currentBusinessId = null;
-        localStorage.removeItem('currentBusinessId');
-        return;
-    }
-    
-    const select = document.getElementById('business-select');
-    
-    // If no business selected or selected business doesn't exist, select first one
-    if (!currentBusinessId || !businesses.some(b => b.id == currentBusinessId)) {
-        currentBusinessId = businesses[0].id;
-        localStorage.setItem('currentBusinessId', currentBusinessId);
-    }
-    
-    // Update dropdown selection
-    if (select) {
-        select.value = currentBusinessId;
-    }
-    
-    console.log('Current business ID:', currentBusinessId);
-}
-
-window.selectBusiness = function(businessId) {
-    console.log('Selecting business:', businessId);
-    currentBusinessId = businessId;
-    localStorage.setItem('currentBusinessId', businessId);
-    
-    const select = document.getElementById('business-select');
-    if (select) {
-        select.value = businessId;
-    }
-    
-    showToast('Business selected', 'success');
-    
-    // Reload dashboard data
+window.selectBusiness = function(id) {
+    currentBusinessId = id;
+    businessSelect.value = id;
     loadDashboardData();
 };
 
-async function saveBusiness(event) {
-    if (event) {
-        event.preventDefault();
-    }
-    
-    console.log('💼 Creating new business...');
-    
-    const businessName = document.getElementById('business-name')?.value;
-    const businessType = document.getElementById('business-type')?.value || 'retail';
-    const businessCurrency = document.getElementById('business-currency')?.value || 'KES';
-
-    if (!businessName) {
-        showToast('Please enter business name', 'error');
-        return false;
-    }
-
-    const token = localStorage.getItem('authToken');
-    if (!token) {
-        showToast('You are not logged in', 'error');
-        window.location.href = '/index.html';
-        return false;
-    }
-
+window.deleteBusiness = async function(id) {
+    if (!confirm('Are you sure you want to delete this business? All associated data will be lost.')) return;
     try {
-        const response = await fetch(`${API_BASE}/businesses/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                name: businessName,
-                type: businessType,
-                currency: businessCurrency
-            })
-        });
-
-        const data = await response.json();
-        console.log('Create business response:', data);
-
-        if (response.ok) {
-            showToast('Business created successfully!', 'success');
-            closeModal('business-modal');
-            
-            // Reset form
-            document.getElementById('business-name').value = '';
-            
-            // Reload businesses
-            await loadBusinesses();
-            
-            // If this is the first business, set as current
-            if (!currentBusinessId && data.id) {
-                currentBusinessId = data.id;
-                localStorage.setItem('currentBusinessId', data.id);
-            }
-            
-            // Switch to businesses view to show the new business
-            if (typeof switchView === 'function') {
-                switchView('businesses');
-            }
-            
-            return true;
+        await apiRequest(`/businesses/${id}`, 'DELETE');
+        await loadBusinesses();
+        if (businesses.length > 0) {
+            currentBusinessId = businesses[0].id;
         } else {
-            showToast(data.detail || 'Failed to create business', 'error');
-            return false;
+            currentBusinessId = null;
         }
+        showMessage('Business deleted', 'success');
     } catch (error) {
-        console.error('Error creating business:', error);
-        showToast('Error creating business: ' + (error.message || 'Unknown error'), 'error');
-        return false;
+        showMessage(error.message, 'error');
+    }
+};
+
+async function createBusiness(name, type, currency) {
+    try {
+        const newBusiness = await apiRequest('/businesses/', 'POST', { name, type, currency });
+        businesses.push(newBusiness);
+        renderBusinessSelect();
+        renderBusinessesGrid();
+        if (!currentBusinessId) {
+            currentBusinessId = newBusiness.id;
+            businessSelect.value = currentBusinessId;
+        }
+        businessModal.classList.remove('active');
+        showMessage('Business created', 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
     }
 }
 
-// ==================== SUMMARY FUNCTIONS ====================
-async function loadSummaryData() {
+// ============================================
+// Business Select Event Listener
+// ============================================
+businessSelect.addEventListener('change', (e) => {
+    currentBusinessId = parseInt(e.target.value);
+    console.log('Business changed to', currentBusinessId);
+
+    const posIdField = document.getElementById('pos-business-id');
+    if (posIdField) {
+        posIdField.value = currentBusinessId;
+        console.log('POS Business ID set to', posIdField.value);
+    }
+
+    const activeView = document.querySelector('.view.active')?.id.replace('-view', '');
+    if (activeView === 'dashboard') loadDashboardData();
+    if (activeView === 'transactions') loadTransactions();
+    if (activeView === 'inventory') loadInventory();
+    if (activeView === 'suppliers') loadSuppliers();
+    if (activeView === 'pos') loadInventory();  // loadInventory will also refresh POS product list
+    if (activeView === 'employees') loadEmployeesView();
+    if (activeView === 'expenses') loadExpensesView();
+    if (activeView === 'profit') loadProfitReport();
+    if (activeView === 'forecast') loadForecast();
+});
+
+// ============================================
+// Dashboard Data
+// ============================================
+
+async function loadDashboardData() {
     if (!currentBusinessId) return;
-    
     try {
-        const summary = await apiCall(`/transactions/summary/overview?business_id=${currentBusinessId}&days=30`);
-        
-        if (summary) {
-            // Update KPI cards
-            const incomeEl = document.getElementById('total-income');
-            const expenseEl = document.getElementById('total-expense');
-            const netEl = document.getElementById('net-cashflow');
-            
-            if (incomeEl) incomeEl.textContent = formatKES(summary.total_income || 0);
-            if (expenseEl) expenseEl.textContent = formatKES(summary.total_expense || 0);
-            if (netEl) netEl.textContent = formatKES(summary.net_cashflow || 0);
-            
-            console.log('✅ Summary data loaded:', summary);
-        }
+        await loadTransactions();
+        updateDashboardKPIs();
+        updateDashboardCharts();
+        loadRecentTransactions();
     } catch (error) {
-        console.error('Error loading summary:', error);
+        console.error('Failed to load dashboard data', error);
     }
 }
 
-async function loadRecentTransactions() {
+async function loadTransactions() {
     if (!currentBusinessId) return;
-    
     try {
-        const transactions = await apiCall(`/transactions/?business_id=${currentBusinessId}&limit=5`);
-        
-        const tbody = document.getElementById('recent-transactions-body');
-        if (!tbody) return;
-        
-        if (!transactions || transactions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No transactions found</td></tr>';
+        transactions = await apiRequest(`/transactions/?business_id=${currentBusinessId}`);
+        renderAllTransactions();
+    } catch (error) {
+        console.error('Failed to load transactions', error);
+    }
+}
+
+function updateDashboardKPIs() {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
+    const recent = transactions.filter(t => new Date(t.created_at) >= thirtyDaysAgo);
+    const income = recent.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const expense = recent.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const net = income - expense;
+    document.getElementById('total-income').textContent = formatCurrency(income);
+    document.getElementById('total-expense').textContent = formatCurrency(expense);
+    document.getElementById('net-cashflow').textContent = formatCurrency(net);
+    document.getElementById('risk-score').textContent = '68';
+}
+
+function updateDashboardCharts() {
+    const labels = [];
+    const incomeData = [];
+    const expenseData = [];
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        labels.push(dateStr.slice(5));
+        const dayTransactions = transactions.filter(t => t.created_at.startsWith(dateStr));
+        const dayIncome = dayTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+        const dayExpense = dayTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+        incomeData.push(dayIncome);
+        expenseData.push(dayExpense);
+    }
+
+    if (cashflowChart) cashflowChart.destroy();
+    const ctx1 = document.getElementById('cashflow-chart').getContext('2d');
+    cashflowChart = new Chart(ctx1, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Income', data: incomeData, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', tension: 0.4 },
+                { label: 'Expense', data: expenseData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', tension: 0.4 }
+            ]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    const categories = {};
+    transactions.forEach(t => {
+        if (!categories[t.category]) categories[t.category] = 0;
+        categories[t.category] += t.amount;
+    });
+    const catLabels = Object.keys(categories);
+    const catData = Object.values(categories);
+    if (categoryChart) categoryChart.destroy();
+    const ctx2 = document.getElementById('category-chart').getContext('2d');
+    categoryChart = new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+            labels: catLabels,
+            datasets: [{ data: catData, backgroundColor: ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6'] }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+
+function loadRecentTransactions() {
+    const tbody = document.getElementById('recent-transactions-body');
+    const recent = transactions.slice(0, 5);
+    if (recent.length === 0) {
+        tbody.innerHTML = '<td colspan="5">No transactions found<\/td>';
+        return;
+    }
+    let html = '';
+    recent.forEach(t => {
+        html += `
+            <tr>
+                <td>${formatDate(t.created_at)}</td>
+                <td>${t.description || '-'}</td>
+                <td>${t.category || '-'}</td>
+                <td>${formatCurrency(t.amount)}</td>
+                <td><span class="badge ${t.type}">${t.type}</span></td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+function renderAllTransactions() {
+    const tbody = document.getElementById('transactions-body');
+    if (!tbody) return;
+    if (transactions.length === 0) {
+        tbody.innerHTML = '<td colspan="5">No transactions<\/td>';
+        return;
+    }
+    let html = '';
+    transactions.forEach(t => {
+        html += `
+            <tr>
+                <td>${formatDate(t.created_at)}</td>
+                <td>${t.description || '-'}</td>
+                <td>${t.category || '-'}</td>
+                <td>${formatCurrency(t.amount)}</td>
+                <td><span class="badge ${t.type}">${t.type}</span></td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+// ============================================
+// Inventory
+// ============================================
+
+async function loadInventory() {
+    if (!currentBusinessId) return;
+    try {
+        inventoryItems = await apiRequest(`/inventory/?business_id=${currentBusinessId}`);
+        renderInventoryTable();
+        updateInventoryStats();
+        loadLowStockAlerts();
+
+        // If POS view is active, refresh the product list
+        const posView = document.getElementById('pos-view');
+        if (posView && posView.classList.contains('active')) {
+            loadPosProducts();
+        }
+    } catch (error) {
+        console.error('Failed to load inventory', error);
+    }
+}
+
+function renderInventoryTable() {
+    const tbody = document.getElementById('inventory-table-body');
+    if (!tbody) return;
+    if (inventoryItems.length === 0) {
+        tbody.innerHTML = '<td colspan="8">No inventory items<\/td>';
+        return;
+    }
+    let html = '';
+    inventoryItems.forEach(item => {
+        const totalValue = item.quantity * item.price_per_unit;
+        let statusClass = 'normal-stock';
+        if (item.quantity <= item.reorder_level) statusClass = 'low-stock';
+        else if (item.quantity <= item.reorder_level * 2) statusClass = 'medium-stock';
+        html += `
+            <tr>
+                <td>${item.sku || '-'}</td>
+                <td>${item.name}</td>
+                <td>${item.quantity}</td>
+                <td>${item.unit}</td>
+                <td>${formatCurrency(item.price_per_unit)}</td>
+                <td>${formatCurrency(totalValue)}</td>
+                <td><span class="badge ${statusClass}">${statusClass.replace('-',' ')}</span></td>
+                <td class="action-buttons">
+                    <button onclick="adjustStock(${item.id}, '${item.name}')" title="Adjust Stock"><i class="fas fa-edit"></i></button>
+                    <button data-delete="inventory" data-id="${item.id}" title="Delete"><i class="fas fa-trash"></i></button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+function updateInventoryStats() {
+    const totalItems = inventoryItems.length;
+    const lowStock = inventoryItems.filter(i => i.quantity <= i.reorder_level).length;
+    const totalValue = inventoryItems.reduce((sum, i) => sum + i.quantity * i.price_per_unit, 0);
+    document.getElementById('total-items').textContent = totalItems;
+    document.getElementById('low-stock-count').textContent = lowStock;
+    document.getElementById('inventory-value').textContent = formatCurrency(totalValue);
+    document.getElementById('turnover-rate').textContent = '15%';
+}
+
+async function addInventoryItem(item) {
+    try {
+        const newItem = await apiRequest('/inventory/', 'POST', { business_id: currentBusinessId, ...item });
+        const purchaseCost = parseFloat(document.getElementById('inv-purchase-cost').value);
+        const purchaseDate = document.getElementById('inv-purchase-date').value;
+        await apiRequest('/purchases/', 'POST', {
+            product_id: newItem.id,
+            quantity: item.quantity,
+            cost_per_unit: purchaseCost,
+            purchase_date: purchaseDate,
+            remaining_quantity: item.quantity,
+            supplier_id: null,
+            notes: "Initial stock from inventory addition"
+        });
+        inventoryItems.push(newItem);
+        renderInventoryTable();
+        updateInventoryStats();
+        inventoryModal.classList.remove('active');
+        showMessage('Item added with purchase batch', 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+}
+
+async function deleteInventoryItem(id) {
+    if (!confirm('Are you sure?')) return;
+    try {
+        await apiRequest(`/inventory/${id}`, 'DELETE');
+        inventoryItems = inventoryItems.filter(i => i.id !== id);
+        renderInventoryTable();
+        updateInventoryStats();
+        showMessage('Item deleted', 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+}
+
+// ============================================
+// Stock Adjustment
+// ============================================
+async function adjustStock(id, name) {
+    document.getElementById('stock-item-id').value = id;
+    document.getElementById('stock-item-name').textContent = name;
+    document.getElementById('stock-adj-quantity').value = '';
+    document.getElementById('stock-notes').value = '';
+    stockModal.classList.add('active');
+}
+
+document.getElementById('stock-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('stock-item-id').value;
+    const quantity = parseFloat(document.getElementById('stock-adj-quantity').value);
+    const type = document.getElementById('stock-type').value;
+    const notes = document.getElementById('stock-notes').value;
+    if (isNaN(quantity) || quantity <= 0) {
+        showMessage('Invalid quantity', 'error');
+        return;
+    }
+    try {
+        const item = inventoryItems.find(i => i.id == id);
+        if (!item) return;
+        const change = type === 'add' ? quantity : -quantity;
+        const updated = await apiRequest(`/inventory/${id}`, 'PUT', {
+            ...item,
+            quantity: item.quantity + change
+        });
+        Object.assign(item, updated);
+        renderInventoryTable();
+        updateInventoryStats();
+        stockModal.classList.remove('active');
+        showMessage('Stock updated', 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+});
+
+async function loadLowStockAlerts() {
+    try {
+        const alerts = await apiRequest(`/inventory/alerts/low-stock?business_id=${currentBusinessId}`);
+        const container = document.getElementById('low-stock-alerts');
+        if (!container) return;
+        if (alerts.length === 0) {
+            container.innerHTML = '';
             return;
         }
-        
+        let html = '<h4>Low Stock Alerts</h4>';
+        alerts.forEach(a => {
+            html += `<div class="alert-item high"><i class="fas fa-exclamation-triangle"></i> ${a.name} (${a.current_quantity} left, reorder at ${a.reorder_level})</div>`;
+        });
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('Failed to load low stock alerts', error);
+    }
+}
+
+// ============================================
+// Suppliers
+// ============================================
+
+async function loadRecentPayments() {
+    if (!currentBusinessId) return;
+    try {
+        const payments = await apiRequest(`/suppliers/payments/all?business_id=${currentBusinessId}&limit=10`);
+        const tbody = document.getElementById('payments-table-body');
+        if (!tbody) return;
+        if (payments.length === 0) {
+            tbody.innerHTML = '<td colspan="4">No payments recorded<\/td>';
+            return;
+        }
         let html = '';
-        transactions.forEach(t => {
+        payments.forEach(p => {
             html += `
                 <tr>
-                    <td>${formatDate(t.created_at)}</td>
-                    <td>${t.description || '-'}</td>
-                    <td>${t.category}</td>
-                    <td>${formatKES(t.amount)}</td>
-                    <td><span class="badge ${t.type}">${t.type}</span></td>
-                    <td class="action-buttons">
-                        <button class="action-btn-icon" onclick="editTransaction(${t.id})">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="action-btn-icon" onclick="deleteTransaction(${t.id})">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>
+                    <td>${formatDate(p.due_date)}</td>
+                    <td>${p.supplier_name}</td>
+                    <td>${formatCurrency(p.amount)}</td>
+                    <td>${p.notes || '-'}</td>
                 </tr>
             `;
         });
         tbody.innerHTML = html;
-        console.log('✅ Recent transactions loaded:', transactions.length);
     } catch (error) {
-        console.error('Error loading transactions:', error);
+        console.error('Failed to load recent payments', error);
     }
 }
 
-async function loadInventoryAlerts() {
+async function loadSuppliers() {
     if (!currentBusinessId) return;
-    
     try {
-        const inventory = await apiCall(`/inventory/?business_id=${currentBusinessId}`);
-        
-        if (!inventory) return;
-        
-        // Update inventory badge
-        const badge = document.getElementById('inventory-badge');
-        if (badge) {
-            const lowStockCount = inventory.filter(i => i.quantity <= i.reorder_level).length;
-            badge.textContent = lowStockCount;
+        suppliers = await apiRequest(`/suppliers/?business_id=${currentBusinessId}`);
+        renderSuppliersGrid();
+        updateSupplierStats();
+        loadRecentPayments();   // Load recent payments table
+    } catch (error) {
+        console.error('Failed to load suppliers', error);
+    }
+}
+
+function renderSuppliersGrid() {
+    const grid = document.getElementById('suppliers-grid');
+    if (!grid) return;
+    if (suppliers.length === 0) {
+        grid.innerHTML = '<p>No suppliers yet. Add one.</p>';
+        return;
+    }
+    let html = '';
+    suppliers.forEach(s => {
+        html += `
+            <div class="supplier-card">
+                <div class="supplier-header">
+                    <h3>${s.name}</h3>
+                    <span class="badge ${s.is_active ? 'paid' : 'inactive'}">${s.is_active ? 'Active' : 'Inactive'}</span>
+                </div>
+                <div class="supplier-contact"><i class="fas fa-user"></i> ${s.contact_person || '-'}</div>
+                <div class="supplier-contact"><i class="fas fa-phone"></i> ${s.phone || '-'}</div>
+                <div class="supplier-contact"><i class="fas fa-envelope"></i> ${s.email || '-'}</div>
+                <div class="supplier-footer">
+                    <span class="payment-badge pending">Terms: ${s.payment_terms}</span>
+                    <button onclick="recordPayment(${s.id}, '${s.name}')" class="btn-icon"><i class="fas fa-money-bill"></i></button>
+                </div>
+            </div>
+        `;
+    });
+    grid.innerHTML = html;
+}
+
+function updateSupplierStats() {
+    document.getElementById('total-suppliers').textContent = suppliers.length;
+    document.getElementById('total-outstanding').textContent = formatCurrency(0);
+    document.getElementById('total-overdue').textContent = formatCurrency(0);
+    document.getElementById('pending-count').textContent = '0';
+}
+
+async function addSupplier(supplier) {
+    try {
+        const newSup = await apiRequest('/suppliers/', 'POST', { business_id: currentBusinessId, ...supplier });
+        suppliers.push(newSup);
+        renderSuppliersGrid();
+        updateSupplierStats();
+        supplierModal.classList.remove('active');
+        showMessage('Supplier added', 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+}
+
+async function recordPayment(id, name) {
+    document.getElementById('payment-supplier-id').value = id;
+    document.getElementById('payment-supplier-name').textContent = name;
+    document.getElementById('payment-amount').value = '';
+    document.getElementById('payment-due-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('payment-notes').value = '';
+    paymentModal.classList.add('active');
+}
+
+// ============================================
+// Employees
+// ============================================
+
+async function loadEmployeesView() {
+    await loadRanks();
+    await loadEmployees();
+    await loadSalaryPayments();
+}
+
+async function loadRanks() {
+    try {
+        const ranks = await apiRequest('/employees/ranks');
+        const tbody = document.getElementById('ranks-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = ranks.map(r => `
+             <tr>
+                <td>${r.id}</td>
+                <td>${r.name}</td>
+                <td>${formatCurrency(r.base_salary)}</td>
+                <td>${r.description || ''}</td>
+                <td class="action-buttons">
+                    <button class="btn-icon" onclick="editRank(${r.id})"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon" data-delete="rank" data-id="${r.id}"><i class="fas fa-trash"></i></button>
+                </td>
+             </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load ranks:', error);
+    }
+}
+
+async function loadEmployees() {
+    try {
+        const employees = await apiRequest('/employees/?active_only=false');
+        const tbody = document.getElementById('employees-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = employees.map(e => `
+             <tr>
+                <td>${e.id}</td>
+                <td>${e.name}</td>
+                <td>${e.rank?.name || ''}</td>
+                <td>${formatCurrency(e.monthly_salary)}</td>
+                <td>${e.hire_date}</td>
+                <td><span class="badge ${e.is_active ? 'paid' : 'pending'}">${e.is_active ? 'Active' : 'Inactive'}</span></td>
+                <td class="action-buttons">
+                    <button class="btn-icon" onclick="editEmployee(${e.id})"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon" onclick="fireEmployee(${e.id})"><i class="fas fa-user-minus"></i></button>
+                    <button class="btn-icon delete" data-delete="employee" data-id="${e.id}"><i class="fas fa-trash"></i></button>
+                </td>
+             </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load employees:', error);
+    }
+}
+
+async function loadSalaryPayments() {
+    try {
+        const payments = await apiRequest('/salary-payments/');
+        const tbody = document.getElementById('salary-payments-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = payments.map(p => `
+             <tr>
+                <td>${p.id}</td>
+                <td>${p.employee?.name || ''}</td>
+                <td>${formatCurrency(p.amount)}</td>
+                <td>${p.payment_date}</td>
+                <td>${p.month}</td>
+             </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load salary payments:', error);
+    }
+}
+
+async function deleteRank(id) {
+    if (!confirm('Delete this rank? All employees with this rank will be affected.')) return;
+    try {
+        await apiRequest(`/employees/ranks/${id}`, 'DELETE');
+        loadRanks();
+        loadEmployees(); // ranks might affect employees
+    } catch (error) {
+        alert('Failed to delete rank: ' + error.message);
+    }
+}
+
+async function fireEmployee(id) {
+    if (!confirm('Fire this employee? They will be marked as inactive.')) return;
+    try {
+        await apiRequest(`/employees/${id}`, 'PUT', {
+            is_active: false,
+            termination_date: new Date().toISOString().split('T')[0]
+        });
+        loadEmployees();
+        await loadTransactions();
+        refreshProfitIfVisible();
+    } catch (error) {
+        alert('Failed to fire employee: ' + error.message);
+    }
+}
+
+async function deleteEmployee(id) {
+    if (!confirm('Permanently delete this employee? This action cannot be undone.')) return;
+    try {
+        await apiRequest(`/employees/${id}`, 'DELETE');
+        loadEmployees();
+        await loadTransactions();
+        refreshProfitIfVisible();
+    } catch (error) {
+        alert('Failed to delete employee: ' + error.message);
+    }
+}
+
+// Edit rank functions
+async function editRank(id) {
+    try {
+        const ranks = await apiRequest('/employees/ranks');
+        const rank = ranks.find(r => r.id === id);
+        if (!rank) throw new Error('Rank not found');
+        document.getElementById('edit-rank-id').value = rank.id;
+        document.getElementById('edit-rank-name').value = rank.name;
+        document.getElementById('edit-rank-base-salary').value = rank.base_salary;
+        document.getElementById('edit-rank-description').value = rank.description || '';
+        editRankModal.classList.add('active');
+    } catch (error) {
+        alert('Failed to load rank details: ' + error.message);
+    }
+}
+
+async function updateRank() {
+    const id = document.getElementById('edit-rank-id').value;
+    const data = {
+        name: document.getElementById('edit-rank-name').value,
+        base_salary: parseFloat(document.getElementById('edit-rank-base-salary').value),
+        description: document.getElementById('edit-rank-description').value
+    };
+    try {
+        await apiRequest(`/employees/ranks/${id}`, 'PUT', data);
+        editRankModal.classList.remove('active');
+        loadRanks();
+        loadEmployees(); // in case employee ranks changed
+        showMessage('Rank updated', 'success');
+    } catch (error) {
+        alert('Failed to update rank: ' + error.message);
+    }
+}
+
+// Edit employee functions
+async function editEmployee(id) {
+    try {
+        const employees = await apiRequest('/employees/?active_only=false');
+        const employee = employees.find(e => e.id === id);
+        if (!employee) throw new Error('Employee not found');
+        const ranks = await apiRequest('/employees/ranks');
+        document.getElementById('edit-employee-id').value = employee.id;
+        document.getElementById('edit-employee-name').value = employee.name;
+        document.getElementById('edit-employee-rank').innerHTML = ranks.map(r => `<option value="${r.id}" ${r.id === employee.rank_id ? 'selected' : ''}>${r.name}</option>`).join('');
+        document.getElementById('edit-employee-salary').value = employee.monthly_salary;
+        document.getElementById('edit-employee-phone').value = employee.phone || '';
+        document.getElementById('edit-employee-email').value = employee.email || '';
+        document.getElementById('edit-employee-hire-date').value = employee.hire_date;
+        document.getElementById('edit-employee-active').checked = employee.is_active;
+        editEmployeeModal.classList.add('active');
+    } catch (error) {
+        alert('Failed to load employee details: ' + error.message);
+    }
+}
+
+async function updateEmployee() {
+    const id = document.getElementById('edit-employee-id').value;
+    const data = {
+        name: document.getElementById('edit-employee-name').value,
+        rank_id: parseInt(document.getElementById('edit-employee-rank').value),
+        monthly_salary: parseFloat(document.getElementById('edit-employee-salary').value),
+        phone: document.getElementById('edit-employee-phone').value,
+        email: document.getElementById('edit-employee-email').value,
+        hire_date: document.getElementById('edit-employee-hire-date').value,
+        is_active: document.getElementById('edit-employee-active').checked
+    };
+    try {
+        await apiRequest(`/employees/${id}`, 'PUT', data);
+        editEmployeeModal.classList.remove('active');
+        loadEmployees();
+        await loadTransactions();
+        refreshProfitIfVisible();
+        showMessage('Employee updated', 'success');
+    } catch (error) {
+        alert('Failed to update employee: ' + error.message);
+    }
+}
+
+// ============================================
+// Expenses
+// ============================================
+
+async function loadExpensesView() {
+    await loadExpenseCategories();
+    await loadExpenses();
+}
+
+async function loadExpenseCategories() {
+    try {
+        const cats = await apiRequest('/expenses/categories');
+        const tbody = document.getElementById('categories-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = cats.map(c => `
+             <tr>
+                <td>${c.id}</td>
+                <td>${c.name}</td>
+                <td>${c.description || ''}</td>
+             </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load categories:', error);
+    }
+}
+
+async function loadExpenses() {
+    try {
+        const expenses = await apiRequest('/expenses/');
+        const tbody = document.getElementById('expenses-table-body');
+        if (!tbody) return;
+        tbody.innerHTML = expenses.map(e => `
+             <tr>
+                <td>${e.id}</td>
+                <td>${e.expense_date}</td>
+                <td>${e.category?.name || ''}</td>
+                <td>${formatCurrency(e.amount)}</td>
+                <td>${e.description || ''}</td>
+                <td>${e.receipt_image ? '<a href="#" onclick="viewReceipt(\''+e.receipt_image+'\')">View</a>' : ''}</td>
+             </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Failed to load expenses:', error);
+    }
+}
+
+// ============================================
+// POS Functions
+// ============================================
+
+function renderProductCheckboxes() {
+    const container = document.getElementById('product-list');
+    if (!container) return;
+    container.innerHTML = '';
+    inventoryItems.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'product-item';
+        div.innerHTML = `
+            <input type="checkbox" class="product-checkbox" data-id="${p.id}" data-name="${p.name}" data-price="${p.price_per_unit}" data-stock="${p.quantity}">
+            <span class="product-info">${p.id} - ${p.name}</span>
+            <span class="product-stock">Stock: ${p.quantity}</span>
+            <span class="product-price">${formatCurrency(p.price_per_unit)}</span>
+            <input type="number" class="product-qty" data-id="${p.id}" min="1" max="${p.quantity}" value="1" style="width:70px;">
+        `;
+        container.appendChild(div);
+    });
+}
+
+document.getElementById('pos-add-selected').addEventListener('click', () => {
+    const checkboxes = document.querySelectorAll('.product-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('Select at least one product');
+        return;
+    }
+    checkboxes.forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        const name = cb.dataset.name;
+        const price = parseFloat(cb.dataset.price);
+        const maxStock = parseInt(cb.dataset.stock);
+        const qtyInput = document.querySelector(`.product-qty[data-id="${id}"]`);
+        const qty = qtyInput ? parseInt(qtyInput.value) : 1;
+        if (qty < 1 || qty > maxStock) {
+            alert(`Invalid quantity for ${name} (max ${maxStock})`);
+            return;
         }
-        
-        // Find the low stock alerts table
-        const tables = document.querySelectorAll('.transactions-table');
-        if (tables.length >= 2) {
-            const lowStockTable = tables[1].querySelector('tbody');
-            if (lowStockTable) {
-                const lowStockItems = inventory.filter(i => i.quantity <= i.reorder_level);
-                
-                if (lowStockItems.length === 0) {
-                    lowStockTable.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No low stock items</td></tr>';
-                } else {
-                    let html = '';
-                    lowStockItems.forEach(item => {
-                        html += `
-                            <tr>
-                                <td>${item.name}</td>
-                                <td>${item.sku || '-'}</td>
-                                <td>${item.quantity}</td>
-                                <td>${item.reorder_level}</td>
-                                <td><span class="badge low-stock">Low Stock</span></td>
-                                <td class="action-buttons">
-                                    <button class="action-btn-icon" onclick="editInventoryItem(${item.id})">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <button class="action-btn-icon" onclick="restockInventoryItem(${item.id})">
-                                        <i class="fas fa-plus-circle"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `;
-                    });
-                    lowStockTable.innerHTML = html;
+        const existing = posCart.find(item => item.product_id === id);
+        if (existing) {
+            if (existing.quantity + qty > maxStock) {
+                alert(`Cannot add more ${name} – only ${maxStock - existing.quantity} left`);
+                return;
+            }
+            existing.quantity += qty;
+        } else {
+            posCart.push({
+                product_id: id,
+                name: name,
+                quantity: qty,
+                unit_price: price
+            });
+        }
+    });
+    renderPosCart();
+    checkboxes.forEach(cb => cb.checked = false);
+});
+
+function loadPosProducts() {
+    renderProductCheckboxes();
+    const businessIdInput = document.getElementById('pos-business-id');
+    if (businessIdInput) {
+        businessIdInput.value = currentBusinessId;
+    }
+}
+
+function renderPosCart() {
+    const tbody = document.getElementById('pos-cart-body');
+    if (!tbody) return;
+    let html = '';
+    let total = 0;
+    posCart.forEach((item, idx) => {
+        const subtotal = item.quantity * item.unit_price;
+        total += subtotal;
+        html += `
+             <tr>
+                <td>${item.name}</td>
+                <td>${item.unit_price}</td>
+                <td>${item.quantity}</td>
+                <td>${subtotal.toFixed(2)}</td>
+                <td><button onclick="removeFromPosCart(${idx})">❌</button></td>
+             </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+    document.getElementById('pos-total').textContent = total.toFixed(2);
+}
+
+window.removeFromPosCart = (idx) => {
+    posCart.splice(idx, 1);
+    renderPosCart();
+};
+
+document.getElementById('pos-complete-sale').addEventListener('click', async () => {
+    if (posCart.length === 0) return alert('Cart empty');
+    const saleData = {
+        business_id: parseInt(document.getElementById('pos-business-id').value),
+        payment_method: document.getElementById('pos-payment-method').value,
+        customer_name: document.getElementById('pos-customer-name').value || null,
+        items: posCart.map(item => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            discount: 0
+        }))
+    };
+    try {
+        const sale = await apiRequest('/sales/', 'POST', saleData);
+        lastSale = sale;
+        showMessage('Sale completed', 'success');
+        posCart = [];
+        renderPosCart();
+        loadPosProducts();
+        loadInventory();
+        await loadTransactions();
+        refreshProfitIfVisible();
+        showReceipt(sale);
+    } catch (err) {
+        showMessage(err.message, 'error');
+    }
+});
+
+function showReceipt(sale) {
+    const container = document.getElementById('receipt-details');
+    const date = new Date(sale.sale_date).toLocaleString();
+    let totalRevenue = 0;
+    let totalCost = 0;
+    let itemsHtml = '';
+    sale.items.forEach(item => {
+        const subtotal = item.quantity * item.unit_price;
+        totalRevenue += subtotal;
+        totalCost += item.cost_of_goods_sold;
+        itemsHtml += `
+             <tr>
+                <td>${item.product_id}</td>
+                <td>${item.quantity}</td>
+                <td>${formatCurrency(item.unit_price)}</td>
+                <td>${formatCurrency(subtotal)}</td>
+             </tr>
+        `;
+    });
+    const profit = totalRevenue - totalCost;
+    container.innerHTML = `
+        <p><strong>Sale ID:</strong> ${sale.id}</p>
+        <p><strong>Date:</strong> ${date}</p>
+        <p><strong>Customer:</strong> ${sale.customer_name || 'Walk-in'}</p>
+        <p><strong>Payment:</strong> ${sale.payment_method}</p>
+        <hr>
+        <table style="width:100%; border-collapse: collapse;">
+            <thead> <tr><th>Item</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr> </thead>
+            <tbody>${itemsHtml}</tbody>
+            <tfoot>
+                <tr><td colspan="3" style="text-align:right;"><strong>Total:</strong></td><td><strong>${formatCurrency(totalRevenue)}</strong></td></tr>
+                <tr><td colspan="3" style="text-align:right;"><strong>Profit:</strong></td><td><strong>${formatCurrency(profit)}</strong></td></tr>
+            </tfoot>
+        </table>
+    `;
+    receiptModal.classList.add('active');
+}
+
+document.getElementById('print-receipt').addEventListener('click', () => {
+    const printContent = document.getElementById('receipt-details').innerHTML;
+    const originalTitle = document.title;
+    document.title = 'SmartPesa Receipt';
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+        <head><title>Receipt</title>
+        <style>
+            body { font-family: monospace; padding: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            td, th { padding: 5px; text-align: left; }
+        </style>
+        </head>
+        <body>${printContent}</body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+    document.title = originalTitle;
+});
+
+document.getElementById('close-receipt').addEventListener('click', () => {
+    receiptModal.classList.remove('active');
+});
+
+document.getElementById('pos-add-stock-btn').addEventListener('click', () => {
+    const select = document.getElementById('stock-product');
+    select.innerHTML = '<option value="">Select product</option>';
+    inventoryItems.forEach(p => {
+        select.innerHTML += `<option value="${p.id}">${p.id} - ${p.name}</option>`;
+    });
+    document.getElementById('stock-quantity').value = '';
+    document.getElementById('stock-cost').value = '';
+    document.getElementById('stock-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('stock-supplier').value = '';
+    document.getElementById('stock-notes').value = '';
+    addStockModal.classList.add('active');
+});
+
+window.openAddStockModal = function() {
+    const select = document.getElementById('stock-product');
+    if (!select) {
+        alert('Modal elements not found. Please ensure you are on the POS view.');
+        return;
+    }
+    select.innerHTML = '<option value="">Select product</option>';
+    inventoryItems.forEach(p => {
+        select.innerHTML += `<option value="${p.id}">${p.id} - ${p.name}</option>`;
+    });
+    document.getElementById('stock-quantity').value = '';
+    document.getElementById('stock-cost').value = '';
+    document.getElementById('stock-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('stock-supplier').value = '';
+    document.getElementById('stock-notes').value = '';
+    addStockModal.classList.add('active');
+};
+
+document.getElementById('add-stock-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const productId = document.getElementById('stock-product').value;
+    const quantityRaw = document.getElementById('stock-quantity').value;
+    const costRaw = document.getElementById('stock-cost').value;
+    const purchaseDate = document.getElementById('stock-date').value;
+    const supplierId = document.getElementById('stock-supplier').value || null;
+    const notes = document.getElementById('stock-notes').value || null;
+
+    const quantity = parseInt(quantityRaw);
+    const cost = parseFloat(costRaw);
+
+    if (!productId || isNaN(quantity) || quantity < 1 || isNaN(cost) || cost < 0) {
+        showMessage('Please fill all fields correctly (quantity must be a number >0, cost must be a number >=0)', 'error');
+        return;
+    }
+
+    const payload = {
+        product_id: parseInt(productId),
+        quantity: quantity,
+        cost_per_unit: cost,
+        purchase_date: purchaseDate,
+        remaining_quantity: quantity,
+        supplier_id: supplierId ? parseInt(supplierId) : null,
+        notes: notes || "Stock added from POS"
+    };
+
+    try {
+        await apiRequest('/purchases/', 'POST', payload);
+        showMessage('Stock added successfully', 'success');
+        addStockModal.classList.remove('active');
+        loadPosProducts();
+        loadInventory();
+    } catch (err) {
+        showMessage(err.message, 'error');
+    }
+});
+
+// ============================================
+// Profit Report
+// ============================================
+
+async function loadProfitReport() {
+    const start = document.getElementById('profit-start').value;
+    const end = document.getElementById('profit-end').value;
+    if (!start || !end) return;
+
+    if (!transactions.length && currentBusinessId) {
+        await loadTransactions();
+    }
+
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    endDate.setHours(23, 59, 59);
+
+    const filtered = transactions.filter(t => {
+        const tDate = new Date(t.created_at);
+        return tDate >= startDate && tDate <= endDate && t.business_id === currentBusinessId;
+    });
+
+    const revenue = filtered.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const expenses = filtered.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const gross = revenue - expenses;
+    const net = gross;
+
+    document.getElementById('profit-revenue').textContent = formatCurrency(revenue);
+    document.getElementById('profit-cogs').textContent = formatCurrency(expenses);
+    document.getElementById('profit-gross').textContent = formatCurrency(gross);
+    document.getElementById('profit-net').textContent = formatCurrency(net);
+
+    if (profitChart) profitChart.destroy();
+    const ctx = document.getElementById('profit-chart').getContext('2d');
+    profitChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Revenue', 'Total Expenses', 'Gross Profit', 'Net Profit'],
+            datasets: [{
+                label: 'KES',
+                data: [revenue, expenses, gross, net],
+                backgroundColor: ['#2ecc71', '#e74c3c', '#3498db', '#9b59b6']
+            }]
+        },
+        options: { responsive: true }
+    });
+}
+
+function refreshProfitIfVisible() {
+    const profitView = document.getElementById('profit-view');
+    if (profitView && profitView.classList.contains('active')) {
+        loadProfitReport();
+    }
+}
+
+document.getElementById('profit-load').addEventListener('click', loadProfitReport);
+
+// ============================================
+// Forecast
+// ============================================
+
+let currentForecastPeriod = 30; // default to 30 days
+
+async function loadForecast() {
+    const container = document.getElementById('forecast-content');
+    if (!container) return;
+
+    if (!currentBusinessId) {
+        container.innerHTML = '<p>Please select a business first.</p>';
+        return;
+    }
+
+    // Show loading state
+    container.innerHTML = '<p>Loading forecast...</p>';
+
+    try {
+        // Use the generic endpoint with the selected days
+        const response = await apiRequest(`/forecast/${currentBusinessId}?days=${currentForecastPeriod}`);
+        if (response.error) {
+            container.innerHTML = `<p>Error: ${response.error}</p>`;
+            return;
+        }
+        renderForecast(response);
+    } catch (error) {
+        console.error('Failed to load forecast:', error);
+        container.innerHTML = '<p>Could not load forecast. Check console for details.</p>';
+        showMessage('Could not load forecast', 'error');
+    }
+}
+
+function renderForecast(data) {
+    const container = document.getElementById('forecast-content');
+    if (!container) return;
+    container.innerHTML = '';
+
+    // Create title with period
+    const periodText = {
+        7: '7‑Day (Weekly)',
+        30: '30‑Day (Monthly)',
+        90: '90‑Day (Quarterly)',
+        365: '365‑Day (Yearly)'
+    }[currentForecastPeriod] || `${currentForecastPeriod}‑Day`;
+    const title = document.createElement('h3');
+    title.textContent = `${periodText} Cash Flow Forecast`;
+    container.appendChild(title);
+
+    // Create canvas for chart
+    const canvas = document.createElement('canvas');
+    canvas.id = 'forecast-chart';
+    canvas.style.maxHeight = '400px';
+    container.appendChild(canvas);
+
+    // Extract forecast data
+    const dates = data.hybrid_model.forecast.map(f => new Date(f.date).toLocaleDateString());
+    const prophetPreds = data.hybrid_model.forecast.map(f => f.prophet_prediction);
+    const hybridPreds = data.hybrid_model.forecast.map(f => f.hybrid_prediction);
+
+    const ctx = canvas.getContext('2d');
+    if (window.forecastChart) window.forecastChart.destroy();
+    window.forecastChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [
+                {
+                    label: 'Prophet Forecast',
+                    data: prophetPreds,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'transparent',
+                    tension: 0.4
+                },
+                {
+                    label: 'Hybrid Forecast (Prophet + RF)',
+                    data: hybridPreds,
+                    borderColor: '#10b981',
+                    backgroundColor: 'transparent',
+                    tension: 0.4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: (context) => `${context.dataset.label}: KES ${context.raw.toFixed(2)}`
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    title: { display: true, text: 'Cash Flow (KES)' }
                 }
             }
         }
-        console.log('✅ Inventory alerts loaded:', inventory.length);
-    } catch (error) {
-        console.error('Error loading inventory:', error);
-    }
-}
-
-async function loadCharts() {
-    if (!currentBusinessId) return;
-    
-    try {
-        // Get daily totals for cashflow chart
-        const data = await apiCall(`/transactions/analysis/daily-totals?business_id=${currentBusinessId}&days=30`);
-        
-        // Create cashflow chart
-        const ctx1 = document.getElementById('cashflow-chart')?.getContext('2d');
-        if (ctx1 && data && data.length > 0) {
-            // Destroy existing chart if it exists
-            if (window.cashflowChart) window.cashflowChart.destroy();
-            
-            window.cashflowChart = new Chart(ctx1, {
-                type: 'line',
-                data: {
-                    labels: data.map(d => {
-                        const date = new Date(d.date);
-                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    }),
-                    datasets: [
-                        {
-                            label: 'Income',
-                            data: data.map(d => d.income),
-                            borderColor: '#10b981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        },
-                        {
-                            label: 'Expense',
-                            data: data.map(d => d.expense),
-                            borderColor: '#ef4444',
-                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                            tension: 0.4,
-                            fill: true
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'top' }
-                    }
-                }
-            });
-        }
-        
-        // Get category data for pie chart
-        const catData = await apiCall(`/transactions/analysis/by-category?business_id=${currentBusinessId}&days=30`);
-        
-        const ctx2 = document.getElementById('category-chart')?.getContext('2d');
-        if (ctx2 && catData && catData.length > 0) {
-            // Destroy existing chart if it exists
-            if (window.categoryChart) window.categoryChart.destroy();
-            
-            // Take top 5 categories
-            const topCats = catData.slice(0, 5);
-            window.categoryChart = new Chart(ctx2, {
-                type: 'doughnut',
-                data: {
-                    labels: topCats.map(c => c.category),
-                    datasets: [{
-                        data: topCats.map(c => c.total),
-                        backgroundColor: ['#1e3c72', '#2a5298', '#3b6cb0', '#4b7ec9', '#5c8fd9'],
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { position: 'bottom' }
-                    }
-                }
-            });
-        }
-        console.log('✅ Charts loaded');
-    } catch (error) {
-        console.error('Error loading charts:', error);
-    }
-}
-
-// ==================== INVENTORY FUNCTIONS ====================
-async function saveInventoryItem() {
-    currentBusinessId = localStorage.getItem('currentBusinessId');
-    
-    if (!currentBusinessId) {
-        showToast('Please select a business first', 'error');
-        return;
-    }
-    
-    const item = {
-        name: document.getElementById('inv-name').value,
-        sku: document.getElementById('inv-sku').value || undefined,
-        quantity: parseFloat(document.getElementById('inv-quantity').value) || 0,
-        unit: document.getElementById('inv-unit').value,
-        price_per_unit: parseFloat(document.getElementById('inv-price').value) || 0,
-        reorder_level: parseFloat(document.getElementById('inv-reorder').value) || 10,
-        business_id: parseInt(currentBusinessId)
-    };
-
-    console.log('Saving inventory item:', item);
-
-    if (!item.name) {
-        showToast('Please enter item name', 'error');
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/inventory/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-            },
-            body: JSON.stringify(item)
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showToast('Inventory item added successfully', 'success');
-            closeModal('inventory-modal');
-            document.getElementById('inventory-form').reset();
-            // Refresh the page to show new item
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showToast(data.detail || 'Failed to add item', 'error');
-        }
-    } catch (error) {
-        console.error('Error adding inventory:', error);
-        showToast('Error adding item', 'error');
-    }
-}
-
-// ==================== SUPPLIER FUNCTIONS ====================
-async function saveSupplier() {
-    currentBusinessId = localStorage.getItem('currentBusinessId');
-    
-    if (!currentBusinessId) {
-        showToast('Please select a business first', 'error');
-        return;
-    }
-    
-    const supplier = {
-        name: document.getElementById('sup-name').value,
-        contact_person: document.getElementById('sup-contact').value || undefined,
-        phone: document.getElementById('sup-phone').value || undefined,
-        email: document.getElementById('sup-email').value || undefined,
-        payment_terms: document.getElementById('sup-payment-terms').value || 'Net 30',
-        business_id: parseInt(currentBusinessId)
-    };
-
-    console.log('Saving supplier:', supplier);
-
-    if (!supplier.name) {
-        showToast('Please enter supplier name', 'error');
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/suppliers/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-            },
-            body: JSON.stringify(supplier)
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showToast('Supplier added successfully', 'success');
-            closeModal('supplier-modal');
-            document.getElementById('supplier-form').reset();
-            // Refresh the page to show new supplier
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showToast(data.detail || 'Failed to add supplier', 'error');
-        }
-    } catch (error) {
-        console.error('Error adding supplier:', error);
-        showToast('Error adding supplier', 'error');
-    }
-}
-
-// ==================== TRANSACTION FUNCTIONS ====================
-async function saveTransaction() {
-    currentBusinessId = localStorage.getItem('currentBusinessId');
-    
-    if (!currentBusinessId) {
-        showToast('Please select a business first', 'error');
-        return;
-    }
-    
-    const transaction = {
-        amount: parseFloat(document.getElementById('tx-amount')?.value) || 0,
-        type: document.getElementById('tx-type')?.value || 'income',
-        category: document.getElementById('tx-category')?.value || 'Sales',
-        description: document.getElementById('tx-description')?.value || '',
-        business_id: parseInt(currentBusinessId)
-    };
-
-    if (!transaction.amount) {
-        showToast('Please enter amount', 'error');
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/transactions/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-            },
-            body: JSON.stringify(transaction)
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showToast('Transaction added successfully', 'success');
-            closeModal('transaction-modal');
-            document.getElementById('transaction-form')?.reset();
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showToast(data.detail || 'Failed to add transaction', 'error');
-        }
-    } catch (error) {
-        console.error('Error adding transaction:', error);
-        showToast('Error adding transaction', 'error');
-    }
-}
-
-// ==================== PAYMENT FUNCTIONS ====================
-async function savePayment() {
-    const paymentModal = document.getElementById('payment-modal');
-    const supplierId = paymentModal?.dataset.supplierId;
-    const amount = parseFloat(document.getElementById('payment-amount')?.value) || 0;
-    const method = document.getElementById('payment-method')?.value || 'bank_transfer';
-    const date = document.getElementById('payment-date')?.value;
-    const notes = document.getElementById('payment-notes')?.value || '';
-
-    if (!supplierId || !amount) {
-        showToast('Please enter payment amount', 'error');
-        return;
-    }
-
-    try {
-        const response = await fetch(`${API_BASE}/suppliers/payments`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-            },
-            body: JSON.stringify({
-                supplier_id: parseInt(supplierId),
-                amount: amount,
-                method: method,
-                payment_date: date,
-                notes: notes
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            showToast('Payment recorded successfully', 'success');
-            closeModal('payment-modal');
-            document.getElementById('payment-form')?.reset();
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showToast(data.detail || 'Failed to record payment', 'error');
-        }
-    } catch (error) {
-        console.error('Error recording payment:', error);
-        showToast('Error recording payment', 'error');
-    }
-}
-
-// ==================== MODAL HELPERS ====================
-function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        modal.classList.add('active');
-    }
-}
-
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        modal.classList.remove('active');
-    }
-}
-
-// ==================== ATTACH EVENT LISTENERS ====================
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Setting up event listeners...');
-    
-    // Only run these on dashboard page
-    if (window.location.pathname.includes('dashboard.html')) {
-        
-        // Inventory form submission
-        const inventoryForm = document.getElementById('inventory-form');
-        if (inventoryForm) {
-            inventoryForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                saveInventoryItem();
-            });
-            console.log(' Inventory form handler attached');
-        }
-
-        // Supplier form submission
-        const supplierForm = document.getElementById('supplier-form');
-        if (supplierForm) {
-            supplierForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                saveSupplier();
-            });
-            console.log('Supplier form handler attached');
-        }
-        
-        // Transaction form submission
-        const transactionForm = document.getElementById('transaction-form');
-        if (transactionForm) {
-            transactionForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                saveTransaction();
-            });
-            console.log(' Transaction form handler attached');
-        }
-        
-        // Business form submission
-        const businessForm = document.getElementById('business-form');
-        if (businessForm) {
-            businessForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                saveBusiness(e);
-            });
-            console.log('Business form handler attached');
-        } else {
-            console.log('❌ Business form not found');
-        }
-        
-        // Payment form submission
-        const paymentForm = document.getElementById('payment-form');
-        if (paymentForm) {
-            paymentForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                savePayment();
-            });
-            console.log(' Payment form handler attached');
-        }
-
-        // Add click handlers for add buttons
-        const addInventoryBtn = document.getElementById('add-inventory-btn');
-        if (addInventoryBtn) {
-            addInventoryBtn.addEventListener('click', () => {
-                openModal('inventory-modal');
-            });
-            console.log(' Add inventory button handler attached');
-        }
-
-        const addSupplierBtn = document.getElementById('add-supplier-btn');
-        if (addSupplierBtn) {
-            addSupplierBtn.addEventListener('click', () => {
-                openModal('supplier-modal');
-            });
-            console.log(' Add supplier button handler attached');
-        }
-        
-        const addTransactionBtn = document.getElementById('add-transaction-btn');
-        if (addTransactionBtn) {
-            addTransactionBtn.addEventListener('click', () => {
-                openModal('transaction-modal');
-            });
-            console.log(' Add transaction button handler attached');
-        }
-        
-        const addBusinessBtn = document.getElementById('add-business-btn');
-        if (addBusinessBtn) {
-            addBusinessBtn.addEventListener('click', () => {
-                openModal('business-modal');
-            });
-            console.log('✅ Add business button handler attached');
-        }
-        
-        // Cancel buttons
-        const cancelBusiness = document.getElementById('cancel-business');
-        if (cancelBusiness) {
-            cancelBusiness.addEventListener('click', () => {
-                closeModal('business-modal');
-            });
-        }
-    }
-
-    // Close modal when clicking X (works on all pages)
-    document.querySelectorAll('.close, .modal-close, .btn-cancel').forEach(btn => {
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            const modal = this.closest('.modal');
-            if (modal) modal.classList.remove('active');
-        });
     });
-    
-    // Close modal when clicking outside
-    window.addEventListener('click', function(e) {
-        if (e.target.classList.contains('modal')) {
-            e.target.classList.remove('active');
+
+    // Risk summary
+    const riskDiv = document.createElement('div');
+    riskDiv.className = 'risk-summary';
+    riskDiv.style.marginTop = '20px';
+    riskDiv.style.padding = '15px';
+    riskDiv.style.backgroundColor = '#f9fafb';
+    riskDiv.style.borderRadius = '8px';
+    riskDiv.innerHTML = `
+        <h4>Risk Analysis</h4>
+        <p><strong>Risk Score:</strong> ${data.risk_analysis.risk_score} / 100</p>
+        <p><strong>Negative Days Forecast:</strong> ${data.risk_analysis.negative_days_forecast}</p>
+        <p><strong>Forecast Volatility:</strong> KES ${data.risk_analysis.forecast_volatility.toFixed(2)}</p>
+        <p><strong>Historical Volatility:</strong> KES ${data.risk_analysis.historical_volatility.toFixed(2)}</p>
+        <ul>
+            ${data.risk_analysis.alerts.map(a => `<li class="alert-${a.level.toLowerCase()}">${a.message}</li>`).join('')}
+        </ul>
+    `;
+    container.appendChild(riskDiv);
+}
+
+function initForecastControls() {
+    const periodSelect = document.getElementById('forecast-period');
+    const refreshBtn = document.getElementById('refresh-forecast-btn');
+    if (periodSelect) {
+        periodSelect.addEventListener('change', () => {
+            currentForecastPeriod = parseInt(periodSelect.value);
+            loadForecast();
+        });
+    }
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => loadForecast());
+    }
+}
+
+// ============================================
+// Navigation & Screen Switching
+// ============================================
+
+function showScreen(screenName) {
+    Object.values(screens).forEach(s => s.classList.remove('active'));
+    screens[screenName].classList.add('active');
+}
+
+function showView(viewName) {
+    Object.values(views).forEach(v => { if (v) v.classList.remove('active'); });
+    if (views[viewName]) views[viewName].classList.add('active');
+    navItems.forEach(item => {
+        if (item.dataset.view === viewName) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
         }
+    });
+    const titles = {
+        dashboard: 'Dashboard',
+        transactions: 'Transactions',
+        forecast: 'Forecast',
+        inventory: 'Inventory',
+        suppliers: 'Suppliers',
+        businesses: 'Businesses',
+        risk: 'Risk Analysis',
+        pos: 'Point of Sale',
+        profit: 'Profit Dashboard',
+        employees: 'Employees',
+        expenses: 'Expenses'
+    };
+    pageTitle.textContent = titles[viewName] || 'SmartPesa';
+
+    if (viewName === 'inventory') loadInventory();
+    if (viewName === 'suppliers') loadSuppliers();
+    if (viewName === 'transactions') loadTransactions();
+    if (viewName === 'businesses') renderBusinessesGrid();
+    if (viewName === 'pos') {
+        loadInventory(); // this will refresh inventory and then call loadPosProducts()
+        const posIdField = document.getElementById('pos-business-id');
+        if (posIdField) posIdField.value = currentBusinessId;
+    }
+    if (viewName === 'profit') loadProfitReport();
+    if (viewName === 'employees') loadEmployeesView();
+    if (viewName === 'expenses') loadExpensesView();
+    if (viewName === 'forecast') loadForecast();
+}
+
+navItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const view = item.dataset.view;
+        showView(view);
     });
 });
 
-// Edit functions
-window.editTransaction = function(id) {
-    showToast('Edit feature coming soon', 'info');
-};
+// ============================================
+// Modal Event Listeners
+// ============================================
 
-window.editInventoryItem = function(id) {
-    showToast('Edit feature coming soon', 'info');
-};
+document.querySelectorAll('.modal .close').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.modal').classList.remove('active'));
+});
 
-window.editSupplier = function(id) {
-    showToast('Edit feature coming soon', 'info');
-};
+document.getElementById('inventory-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const item = {
+        name: document.getElementById('inv-name').value,
+        sku: document.getElementById('inv-sku').value || null,
+        quantity: parseFloat(document.getElementById('inv-quantity').value),
+        unit: document.getElementById('inv-unit').value,
+        price_per_unit: parseFloat(document.getElementById('inv-price').value),
+        reorder_level: parseFloat(document.getElementById('inv-reorder').value)
+    };
+    addInventoryItem(item);
+});
 
-// Delete functions
-window.deleteTransaction = async function(id) {
-    if (!confirm('Delete this transaction?')) return;
-    
-    const response = await fetch(`${API_BASE}/transactions/${id}`, {
-        method: 'DELETE',
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
-    });
-    
-    if (response.ok) {
-        showToast('Transaction deleted', 'success');
-        loadRecentTransactions();
-        loadSummaryData();
-        loadCharts();
-    } else {
-        showToast('Failed to delete transaction', 'error');
+// Add Supplier button – open modal
+document.getElementById('add-supplier-btn').addEventListener('click', () => {
+    supplierModal.classList.add('active');
+});
+
+document.getElementById('supplier-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const supplier = {
+        name: document.getElementById('sup-name').value,
+        contact_person: document.getElementById('sup-contact').value || null,
+        phone: document.getElementById('sup-phone').value || null,
+        email: document.getElementById('sup-email').value || null,
+        address: document.getElementById('sup-address').value || null,
+        payment_terms: document.getElementById('sup-terms').value || 'Net 30'
+    };
+    addSupplier(supplier);
+});
+
+// Supplier payment form – now actually records payment
+document.getElementById('payment-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const supplierId = parseInt(document.getElementById('payment-supplier-id').value);
+    const amount = parseFloat(document.getElementById('payment-amount').value);
+    const dueDate = document.getElementById('payment-due-date').value;
+    const notes = document.getElementById('payment-notes').value;
+
+    if (!supplierId || isNaN(amount) || amount <= 0) {
+        showMessage('Please enter a valid amount.', 'error');
+        return;
     }
-};
 
-window.deleteInventoryItem = async function(id) {
-    if (!confirm('Delete this item?')) return;
-    
-    const response = await fetch(`${API_BASE}/inventory/${id}`, {
-        method: 'DELETE',
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
-    });
-    
-    if (response.ok) {
-        showToast('Item deleted', 'success');
-        loadInventoryAlerts();
-
-    } else {
-        showToast('Failed to delete item', 'error');
+    try {
+        // Call the backend to record payment (this should create an expense transaction)
+        await apiRequest(`/suppliers/${supplierId}/payments`, 'POST', {
+            amount: amount,
+            payment_date: dueDate,
+            notes: notes,
+            business_id: currentBusinessId
+        });
+        showMessage('Payment recorded successfully', 'success');
+        paymentModal.classList.remove('active');
+        // Refresh supplier list to update outstanding balance and recent payments
+        await loadSuppliers();
+        // Refresh transactions to see the new expense
+        await loadTransactions();
+    } catch (error) {
+        showMessage(error.message, 'error');
     }
-};
+});
 
-window.deleteSupplier = async function(id) {
-    if (!confirm('Delete this supplier?')) return;
-    
-    const response = await fetch(`${API_BASE}/suppliers/${id}`, {
-        method: 'DELETE',
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        }
-    });
-    
-    if (response.ok) {
-        showToast('Supplier deleted', 'success');
-        window.location.reload();
-    } else {
-        showToast('Failed to delete supplier', 'error');
+// ============================================
+// Employee & Expense Modal Handlers
+// ============================================
+
+document.getElementById('add-rank-btn').addEventListener('click', () => {
+    rankModal.classList.add('active');
+});
+
+document.getElementById('add-employee-btn').addEventListener('click', async () => {
+    const ranks = await apiRequest('/employees/ranks');
+    const select = document.getElementById('emp-rank');
+    select.innerHTML = ranks.map(r => `<option value="${r.id}">${r.name} (${formatCurrency(r.base_salary)})</option>`).join('');
+    employeeModal.classList.add('active');
+});
+
+document.getElementById('pay-salary-btn').addEventListener('click', async () => {
+    const employees = await apiRequest('/employees/?active_only=true');
+    const select = document.getElementById('salary-employee');
+    select.innerHTML = employees.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+    salaryModal.classList.add('active');
+});
+
+document.getElementById('add-expense-btn').addEventListener('click', async () => {
+    // Guard: ensure a business is selected before opening the modal
+    if (!currentBusinessId) {
+        alert('Please select or create a business first.');
+        return;
     }
-};
+    const categories = await apiRequest('/expenses/categories');
+    const select = document.getElementById('expense-category');
+    select.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    expenseModal.classList.add('active');
+});
 
-// Other utility functions
-window.restockInventoryItem = function(id) {
-    showToast('Restock feature coming soon', 'info');
-};
+// Rank form (create)
+document.getElementById('rank-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = {
+        name: document.getElementById('rank-name').value,
+        base_salary: parseFloat(document.getElementById('rank-base-salary').value),
+        description: document.getElementById('rank-description').value
+    };
+    await apiRequest('/employees/ranks', 'POST', data);
+    rankModal.classList.remove('active');
+    loadRanks();
+});
 
-window.viewSupplierPayments = function(supplierId) {
-    showToast('View payments feature coming soon', 'info');
-};
+// Employee form (create)
+document.getElementById('employee-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = {
+        name: document.getElementById('emp-name').value,
+        rank_id: parseInt(document.getElementById('emp-rank').value),
+        monthly_salary: parseFloat(document.getElementById('emp-salary').value),
+        phone: document.getElementById('emp-phone').value,
+        email: document.getElementById('emp-email').value,
+        hire_date: document.getElementById('emp-hire-date').value
+    };
+    await apiRequest('/employees/', 'POST', data);
+    employeeModal.classList.remove('active');
+    loadEmployees();
+    await loadTransactions();
+    refreshProfitIfVisible();
+});
 
-window.showAddPaymentModal = function(supplierId, supplierName) {
-    document.getElementById('payment-supplier').value = supplierName;
-    document.getElementById('payment-amount').value = '';
-    document.getElementById('payment-date').value = new Date().toISOString().split('T')[0];
-    document.getElementById('payment-notes').value = '';
-    
-    // Store supplier ID for save operation
-    document.getElementById('payment-modal').dataset.supplierId = supplierId;
-    openModal('payment-modal');
-};
+// Salary form
+document.getElementById('salary-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentBusinessId) {
+        alert('Please select a business first.');
+        return;
+    }
+    const data = {
+        employee_id: parseInt(document.getElementById('salary-employee').value),
+        amount: parseFloat(document.getElementById('salary-amount').value),
+        payment_date: document.getElementById('salary-date').value,
+        month: document.getElementById('salary-month').value,
+        description: document.getElementById('salary-description').value,
+        business_id: currentBusinessId
+    };
+    try {
+        await apiRequest('/salary-payments/', 'POST', data);
+        salaryModal.classList.remove('active');
+        loadSalaryPayments();
+        await loadTransactions();
+        refreshProfitIfVisible();
+        showMessage('Salary payment recorded', 'success');
+    } catch (error) {
+        showMessage(error.message, 'error');
+    }
+});
 
-window.showAddCategoryModal = function() {
-    showToast('Add category feature coming soon', 'info');
-};
+// Expense form
+document.getElementById('expense-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentBusinessId) {
+        alert('Please select or create a business first.');
+        return;
+    }
+    const data = {
+        category_id: parseInt(document.getElementById('expense-category').value),
+        amount: parseFloat(document.getElementById('expense-amount').value),
+        expense_date: document.getElementById('expense-date').value,
+        description: document.getElementById('expense-description').value,
+        business_id: currentBusinessId
+    };
+    await apiRequest('/expenses/', 'POST', data);
+    expenseModal.classList.remove('active');
+    loadExpenses();
+    await loadTransactions();
+    refreshProfitIfVisible();
+});
 
-// Logout function
-function logout() {
-    localStorage.clear();
-    showToast('Logged out successfully', 'success');
-    setTimeout(() => {
-        window.location.href = '/index.html';
-    }, 1000);
+// Edit rank form
+document.getElementById('edit-rank-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await updateRank();
+});
+
+// Edit employee form
+document.getElementById('edit-employee-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await updateEmployee();
+});
+
+// ============================================
+// Business Modal Handlers
+// ============================================
+
+document.getElementById('add-business-btn').addEventListener('click', () => {
+    businessModal.classList.add('active');
+});
+
+document.getElementById('business-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('business-name').value;
+    const type = document.getElementById('business-type').value;
+    const currency = document.getElementById('business-currency').value;
+    createBusiness(name, type, currency);
+});
+
+// ============================================
+// Login/Register
+// ============================================
+
+document.getElementById('login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    login(email, password);
+});
+
+document.getElementById('register-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('reg-email').value;
+    const password = document.getElementById('reg-password').value;
+    const confirm = document.getElementById('reg-confirm').value;
+    if (password !== confirm) {
+        showMessage('Passwords do not match', 'error');
+        return;
+    }
+    register(email, password);
+});
+
+document.getElementById('show-register').addEventListener('click', (e) => {
+    e.preventDefault();
+    showScreen('register');
+});
+
+document.getElementById('show-login').addEventListener('click', (e) => {
+    e.preventDefault();
+    showScreen('login');
+});
+
+logoutBtn.addEventListener('click', () => {
+    removeToken();
+    stopAutoRefresh();
+    showScreen('login');
+});
+
+document.getElementById('add-inventory-btn').addEventListener('click', () => {
+    document.getElementById('inv-name').value = '';
+    document.getElementById('inv-sku').value = '';
+    document.getElementById('inv-quantity').value = 0;
+    document.getElementById('inv-unit').value = 'pieces';
+    document.getElementById('inv-price').value = 0;
+    document.getElementById('inv-reorder').value = 10;
+    document.getElementById('inv-purchase-cost').value = '';
+    document.getElementById('inv-purchase-date').value = new Date().toISOString().split('T')[0];
+    inventoryModal.classList.add('active');
+});
+
+// ============================================
+// Global Delete Event Delegation
+// ============================================
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-delete]');
+    if (!btn) return;
+    const type = btn.getAttribute('data-delete');
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+    if (type === 'business') await deleteBusiness(id);
+    if (type === 'rank') await deleteRank(id);
+    if (type === 'employee') await deleteEmployee(id);
+    if (type === 'inventory') await deleteInventoryItem(id);
+});
+
+// ============================================
+// Initialisation
+// ============================================
+if (getToken()) {
+    loadUserProfile().then(() => {
+        loadBusinesses().then(() => {
+            showScreen('dashboard');
+            showView('dashboard');
+            startAutoRefresh();
+            initForecastControls();  // initialize forecast controls
+        });
+    }).catch(() => {
+        removeToken();
+        stopAutoRefresh();
+        showScreen('login');
+    });
+} else {
+    showScreen('login');
 }
-
-// Make functions available globally
-window.saveInventoryItem = saveInventoryItem;
-window.saveSupplier = saveSupplier;
-window.saveTransaction = saveTransaction;
-window.saveBusiness = saveBusiness;
-window.savePayment = savePayment;
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.logout = logout;
-window.loadDashboardData = loadDashboardData;
-window.loadBusinesses = loadBusinesses;
-
-console.log('All SmartPesa functions loaded');
-
