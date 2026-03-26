@@ -336,6 +336,7 @@ businessSelect.addEventListener('change', (e) => {
     if (activeView === 'expenses') loadExpensesView();
     if (activeView === 'profit') loadProfitReport();
     if (activeView === 'forecast') loadForecast();
+    if (activeView === 'risk') loadRiskAnalysis();   // refresh risk when business changes
 });
 
 // ============================================
@@ -436,13 +437,13 @@ function loadRecentTransactions() {
     let html = '';
     recent.forEach(t => {
         html += `
-            <tr>
-                <td>${formatDate(t.created_at)}
-                <td>${t.description || '-'}
-                <td>${t.category || '-'}
-                <td>${formatCurrency(t.amount)}
-                <td><span class="badge ${t.type}">${t.type}</span>
-            </tr>
+             <tr>
+                <td>${formatDate(t.created_at)}</td>
+                <td>${t.description || '-'}</td>
+                <td>${t.category || '-'}</td>
+                <td>${formatCurrency(t.amount)}</td>
+                <td><span class="badge ${t.type}">${t.type}</span></td>
+             </tr>
         `;
     });
     tbody.innerHTML = html;
@@ -458,13 +459,13 @@ function renderAllTransactions() {
     let html = '';
     transactions.forEach(t => {
         html += `
-            <tr>
-                <td>${formatDate(t.created_at)}
-                <td>${t.description || '-'}
-                <td>${t.category || '-'}
-                <td>${formatCurrency(t.amount)}
-                <td><span class="badge ${t.type}">${t.type}</span>
-            </tr>
+             <tr>
+                <td>${formatDate(t.created_at)}</td>
+                <td>${t.description || '-'}</td>
+                <td>${t.category || '-'}</td>
+                <td>${formatCurrency(t.amount)}</td>
+                <td><span class="badge ${t.type}">${t.type}</span></td>
+             </tr>
         `;
     });
     tbody.innerHTML = html;
@@ -506,19 +507,19 @@ function renderInventoryTable() {
         if (item.quantity <= item.reorder_level) statusClass = 'low-stock';
         else if (item.quantity <= item.reorder_level * 2) statusClass = 'medium-stock';
         html += `
-            <tr>
-                <td>${item.sku || '-'}
-                <td>${item.name}
-                <td>${item.quantity}
-                <td>${item.unit}
-                <td>${formatCurrency(item.price_per_unit)}
-                <td>${formatCurrency(totalValue)}
-                <td><span class="badge ${statusClass}">${statusClass.replace('-',' ')}</span>
+             <tr>
+                <td>${item.sku || '-'}</td>
+                <td>${item.name}</td>
+                <td>${item.quantity}</td>
+                <td>${item.unit}</td>
+                <td>${formatCurrency(item.price_per_unit)}</td>
+                <td>${formatCurrency(totalValue)}</td>
+                <td><span class="badge ${statusClass}">${statusClass.replace('-',' ')}</span></td>
                 <td class="action-buttons">
                     <button onclick="adjustStock(${item.id}, '${item.name}')" title="Adjust Stock"><i class="fas fa-edit"></i></button>
                     <button data-delete="inventory" data-id="${item.id}" title="Delete"><i class="fas fa-trash"></i></button>
-                
-            </tr>
+                </td>
+             </tr>
         `;
     });
     tbody.innerHTML = html;
@@ -646,12 +647,12 @@ async function loadRecentPayments() {
         let html = '';
         payments.forEach(p => {
             html += `
-                <tr>
-                    <td>${formatDate(p.due_date)}
-                    <td>${p.supplier_name}
-                    <td>${formatCurrency(p.amount)}
-                    <td>${p.notes || '-'}
-                </tr>
+                 <tr>
+                    <td>${formatDate(p.due_date)}</td>
+                    <td>${p.supplier_name}</td>
+                    <td>${formatCurrency(p.amount)}</td>
+                    <td>${p.notes || '-'}</td>
+                 </tr>
             `;
         });
         tbody.innerHTML = html;
@@ -745,16 +746,16 @@ async function loadRanks() {
         const tbody = document.getElementById('ranks-table-body');
         if (!tbody) return;
         tbody.innerHTML = ranks.map(r => `
-             <tr>
-                <td>${r.id}
-                <td>${r.name}
-                <td>${formatCurrency(r.base_salary)}
-                <td>${r.description || ''}
+              <tr>
+                <td>${r.id}</td>
+                <td>${r.name}</td>
+                <td>${formatCurrency(r.base_salary)}</td>
+                <td>${r.description || ''}</td>
                 <td class="action-buttons">
                     <button class="btn-icon" onclick="editRank(${r.id})"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon" data-delete="rank" data-id="${r.id}"><i class="fas fa-trash"></i></button>
-                
-             </tr>
+                </td>
+              </tr>
         `).join('');
     } catch (error) {
         console.error('Failed to load ranks:', error);
@@ -767,19 +768,19 @@ async function loadEmployees() {
         const tbody = document.getElementById('employees-table-body');
         if (!tbody) return;
         tbody.innerHTML = employees.map(e => `
-             <tr>
-                <td>${e.id}
-                <td>${e.name}
-                <td>${e.rank?.name || ''}
-                <td>${formatCurrency(e.monthly_salary)}
-                <td>${e.hire_date}
-                <td><span class="badge ${e.is_active ? 'paid' : 'pending'}">${e.is_active ? 'Active' : 'Inactive'}</span>
+              <tr>
+                <td>${e.id}</td>
+                <td>${e.name}</td>
+                <td>${e.rank?.name || ''}</td>
+                <td>${formatCurrency(e.monthly_salary)}</td>
+                <td>${e.hire_date}</td>
+                <td><span class="badge ${e.is_active ? 'paid' : 'pending'}">${e.is_active ? 'Active' : 'Inactive'}</span></td>
                 <td class="action-buttons">
                     <button class="btn-icon" onclick="editEmployee(${e.id})"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon" onclick="fireEmployee(${e.id})"><i class="fas fa-user-minus"></i></button>
                     <button class="btn-icon delete" data-delete="employee" data-id="${e.id}"><i class="fas fa-trash"></i></button>
-                
-             </tr>
+                </td>
+              </tr>
         `).join('');
     } catch (error) {
         console.error('Failed to load employees:', error);
@@ -792,13 +793,13 @@ async function loadSalaryPayments() {
         const tbody = document.getElementById('salary-payments-table-body');
         if (!tbody) return;
         tbody.innerHTML = payments.map(p => `
-             <tr>
-                <td>${p.id}
-                <td>${p.employee?.name || ''}
-                <td>${formatCurrency(p.amount)}
-                <td>${p.payment_date}
-                <td>${p.month}
-             </tr>
+              <tr>
+                <td>${p.id}</td>
+                <td>${p.employee?.name || ''}</td>
+                <td>${formatCurrency(p.amount)}</td>
+                <td>${p.payment_date}</td>
+                <td>${p.month}</td>
+              </tr>
         `).join('');
     } catch (error) {
         console.error('Failed to load salary payments:', error);
@@ -936,11 +937,11 @@ async function loadExpenseCategories() {
         const tbody = document.getElementById('categories-table-body');
         if (!tbody) return;
         tbody.innerHTML = cats.map(c => `
-             <tr>
-                <td>${c.id}
-                <td>${c.name}
-                <td>${c.description || ''}
-             </tr>
+              <tr>
+                <td>${c.id}</td>
+                <td>${c.name}</td>
+                <td>${c.description || ''}</td>
+              </tr>
         `).join('');
     } catch (error) {
         console.error('Failed to load categories:', error);
@@ -953,14 +954,14 @@ async function loadExpenses() {
         const tbody = document.getElementById('expenses-table-body');
         if (!tbody) return;
         tbody.innerHTML = expenses.map(e => `
-             <tr>
-                <td>${e.id}
-                <td>${e.expense_date}
-                <td>${e.category?.name || ''}
-                <td>${formatCurrency(e.amount)}
-                <td>${e.description || ''}
-                <td>${e.receipt_image ? '<a href="#" onclick="viewReceipt(\''+e.receipt_image+'\')">View</a>' : ''}
-             </tr>
+              <tr>
+                <td>${e.id}</td>
+                <td>${e.expense_date}</td>
+                <td>${e.category?.name || ''}</td>
+                <td>${formatCurrency(e.amount)}</td>
+                <td>${e.description || ''}</td>
+                <td>${e.receipt_image ? '<a href="#" onclick="viewReceipt(\''+e.receipt_image+'\')">View</a>' : ''}</td>
+              </tr>
         `).join('');
     } catch (error) {
         console.error('Failed to load expenses:', error);
@@ -1043,13 +1044,13 @@ function renderPosCart() {
         const subtotal = item.quantity * item.unit_price;
         total += subtotal;
         html += `
-             <tr>
-                <td>${item.name}
-                <td>${item.unit_price}
-                <td>${item.quantity}
-                <td>${subtotal.toFixed(2)}
-                <td><button onclick="removeFromPosCart(${idx})">❌</button>
-             </tr>
+              <tr>
+                <td>${item.name}</td>
+                <td>${item.unit_price}</td>
+                <td>${item.quantity}</td>
+                <td>${subtotal.toFixed(2)}</td>
+                <td><button onclick="removeFromPosCart(${idx})">❌</button></td>
+              </tr>
         `;
     });
     tbody.innerHTML = html;
@@ -1101,12 +1102,12 @@ function showReceipt(sale) {
         totalRevenue += subtotal;
         totalCost += item.cost_of_goods_sold;
         itemsHtml += `
-             <tr>
-                <td>${item.product_id}
-                <td>${item.quantity}
-                <td>${formatCurrency(item.unit_price)}
-                <td>${formatCurrency(subtotal)}
-             </tr>
+              <tr>
+                <td>${item.product_id}</td>
+                <td>${item.quantity}</td>
+                <td>${formatCurrency(item.unit_price)}</td>
+                <td>${formatCurrency(subtotal)}</td>
+              </tr>
         `;
     });
     const profit = totalRevenue - totalCost;
@@ -1117,13 +1118,13 @@ function showReceipt(sale) {
         <p><strong>Payment:</strong> ${sale.payment_method}</p>
         <hr>
         <table style="width:100%; border-collapse: collapse;">
-            <thead> 氧化钙<th>Item</th><th>Qty</th><th>Price</th><th>Subtotal</th> </thead>
+            <thead> <tr><th>Item</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr> </thead>
             <tbody>${itemsHtml}</tbody>
             <tfoot>
-                 <td colspan="3" style="text-align:right;"><strong>Total:</strong> <strong>${formatCurrency(totalRevenue)}</strong> 
-                 <td colspan="3" style="text-align:right;"><strong>Profit:</strong> <strong>${formatCurrency(profit)}</strong> 
+                 <tr><td colspan="3" style="text-align:right;"><strong>Total:</strong></td><td><strong>${formatCurrency(totalRevenue)}</strong></td></tr>
+                 <tr><td colspan="3" style="text-align:right;"><strong>Profit:</strong></td><td><strong>${formatCurrency(profit)}</strong></td></tr>
             </tfoot>
-         </table>
+          </table>
     `;
     receiptModal.classList.add('active');
 }
@@ -1419,6 +1420,54 @@ function initForecastControls() {
 }
 
 // ============================================
+// Risk Analysis View (NEW)
+// ============================================
+
+async function loadRiskAnalysis() {
+    const container = document.getElementById('risk-content');
+    if (!container) return;
+
+    if (!currentBusinessId) {
+        container.innerHTML = '<p>Please select a business first.</p>';
+        return;
+    }
+
+    container.innerHTML = '<p>Loading risk analysis...</p>';
+
+    try {
+        // Use the same forecast endpoint with 30‑day period to get risk data
+        const response = await apiRequest(`/forecast/${currentBusinessId}?days=30`);
+        if (response.error) {
+            container.innerHTML = `<p>Error: ${response.error}</p>`;
+            return;
+        }
+
+        // Display only the risk summary (similar to forecast view)
+        container.innerHTML = `
+            <div class="risk-summary">
+                <h3>Risk Analysis for ${businesses.find(b => b.id === currentBusinessId)?.name || 'Business'}</h3>
+                <p><strong>Risk Score:</strong> ${response.risk_analysis.risk_score} / 100</p>
+                <p><strong>Negative Days Forecast:</strong> ${response.risk_analysis.negative_days_forecast}</p>
+                <p><strong>Forecast Volatility:</strong> KES ${response.risk_analysis.forecast_volatility.toFixed(2)}</p>
+                <p><strong>Historical Volatility:</strong> KES ${response.risk_analysis.historical_volatility.toFixed(2)}</p>
+                <h4>Alerts</h4>
+                <ul>
+                    ${response.risk_analysis.alerts.map(a => `<li class="alert-${a.level.toLowerCase()}">${a.message}</li>`).join('')}
+                </ul>
+                <h4>Recommendations</h4>
+                <ul>
+                    ${response.risk_analysis.recommendations ? response.risk_analysis.recommendations.map(r => `<li>${r}</li>`).join('') : '<li>No specific recommendations at this time.</li>'}
+                </ul>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Failed to load risk analysis:', error);
+        container.innerHTML = '<p>Could not load risk analysis. Please check your connection and try again.</p>';
+        showMessage('Could not load risk analysis', 'error');
+    }
+}
+
+// ============================================
 // Navigation & Screen Switching
 // ============================================
 
@@ -1452,6 +1501,7 @@ function showView(viewName) {
     };
     pageTitle.textContent = titles[viewName] || 'SmartPesa';
 
+    // Load data based on the view
     if (viewName === 'inventory') loadInventory();
     if (viewName === 'suppliers') loadSuppliers();
     if (viewName === 'transactions') loadTransactions();
@@ -1465,6 +1515,7 @@ function showView(viewName) {
     if (viewName === 'employees') loadEmployeesView();
     if (viewName === 'expenses') loadExpensesView();
     if (viewName === 'forecast') loadForecast();
+    if (viewName === 'risk') loadRiskAnalysis();   // <-- Load risk data
 }
 
 navItems.forEach(item => {

@@ -20,6 +20,10 @@ class User(Base):
     created_at = Column(DateTime, server_default=func.now())
     last_login = Column(DateTime, nullable=True)
     
+    # Password reset fields
+    reset_token = Column(String(255), nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
+    
     # Relationships
     businesses = relationship("Business", back_populates="owner", cascade="all, delete-orphan")
     
