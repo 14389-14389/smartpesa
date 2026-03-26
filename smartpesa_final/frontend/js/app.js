@@ -437,11 +437,11 @@ function loadRecentTransactions() {
     recent.forEach(t => {
         html += `
             <tr>
-                <td>${formatDate(t.created_at)}电子
-                <td>${t.description || '-'}电子
-                <td>${t.category || '-'}电子
-                <td>${formatCurrency(t.amount)}电子
-                <td><span class="badge ${t.type}">${t.type}</span>电子
+                <td>${formatDate(t.created_at)}
+                <td>${t.description || '-'}
+                <td>${t.category || '-'}
+                <td>${formatCurrency(t.amount)}
+                <td><span class="badge ${t.type}">${t.type}</span>
             </tr>
         `;
     });
@@ -459,11 +459,11 @@ function renderAllTransactions() {
     transactions.forEach(t => {
         html += `
             <tr>
-                <td>${formatDate(t.created_at)}电子
-                <td>${t.description || '-'}电子
-                <td>${t.category || '-'}电子
-                <td>${formatCurrency(t.amount)}电子
-                <td><span class="badge ${t.type}">${t.type}</span>电子
+                <td>${formatDate(t.created_at)}
+                <td>${t.description || '-'}
+                <td>${t.category || '-'}
+                <td>${formatCurrency(t.amount)}
+                <td><span class="badge ${t.type}">${t.type}</span>
             </tr>
         `;
     });
@@ -507,17 +507,17 @@ function renderInventoryTable() {
         else if (item.quantity <= item.reorder_level * 2) statusClass = 'medium-stock';
         html += `
             <tr>
-                <td>${item.sku || '-'}电子
-                <td>${item.name}电子
-                <td>${item.quantity}电子
-                <td>${item.unit}电子
-                <td>${formatCurrency(item.price_per_unit)}电子
-                <td>${formatCurrency(totalValue)}电子
-                <td><span class="badge ${statusClass}">${statusClass.replace('-',' ')}</span>电子
+                <td>${item.sku || '-'}
+                <td>${item.name}
+                <td>${item.quantity}
+                <td>${item.unit}
+                <td>${formatCurrency(item.price_per_unit)}
+                <td>${formatCurrency(totalValue)}
+                <td><span class="badge ${statusClass}">${statusClass.replace('-',' ')}</span>
                 <td class="action-buttons">
                     <button onclick="adjustStock(${item.id}, '${item.name}')" title="Adjust Stock"><i class="fas fa-edit"></i></button>
                     <button data-delete="inventory" data-id="${item.id}" title="Delete"><i class="fas fa-trash"></i></button>
-                电子
+                
             </tr>
         `;
     });
@@ -647,10 +647,10 @@ async function loadRecentPayments() {
         payments.forEach(p => {
             html += `
                 <tr>
-                    <td>${formatDate(p.due_date)}电子
-                    <td>${p.supplier_name}电子
-                    <td>${formatCurrency(p.amount)}电子
-                    <td>${p.notes || '-'}电子
+                    <td>${formatDate(p.due_date)}
+                    <td>${p.supplier_name}
+                    <td>${formatCurrency(p.amount)}
+                    <td>${p.notes || '-'}
                 </tr>
             `;
         });
@@ -746,14 +746,14 @@ async function loadRanks() {
         if (!tbody) return;
         tbody.innerHTML = ranks.map(r => `
              <tr>
-                <td>${r.id}电子
-                <td>${r.name}电子
-                <td>${formatCurrency(r.base_salary)}电子
-                <td>${r.description || ''}电子
+                <td>${r.id}
+                <td>${r.name}
+                <td>${formatCurrency(r.base_salary)}
+                <td>${r.description || ''}
                 <td class="action-buttons">
                     <button class="btn-icon" onclick="editRank(${r.id})"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon" data-delete="rank" data-id="${r.id}"><i class="fas fa-trash"></i></button>
-                电子
+                
              </tr>
         `).join('');
     } catch (error) {
@@ -768,17 +768,17 @@ async function loadEmployees() {
         if (!tbody) return;
         tbody.innerHTML = employees.map(e => `
              <tr>
-                <td>${e.id}电子
-                <td>${e.name}电子
-                <td>${e.rank?.name || ''}电子
-                <td>${formatCurrency(e.monthly_salary)}电子
-                <td>${e.hire_date}电子
-                <td><span class="badge ${e.is_active ? 'paid' : 'pending'}">${e.is_active ? 'Active' : 'Inactive'}</span>电子
+                <td>${e.id}
+                <td>${e.name}
+                <td>${e.rank?.name || ''}
+                <td>${formatCurrency(e.monthly_salary)}
+                <td>${e.hire_date}
+                <td><span class="badge ${e.is_active ? 'paid' : 'pending'}">${e.is_active ? 'Active' : 'Inactive'}</span>
                 <td class="action-buttons">
                     <button class="btn-icon" onclick="editEmployee(${e.id})"><i class="fas fa-edit"></i></button>
                     <button class="btn-icon" onclick="fireEmployee(${e.id})"><i class="fas fa-user-minus"></i></button>
                     <button class="btn-icon delete" data-delete="employee" data-id="${e.id}"><i class="fas fa-trash"></i></button>
-                电子
+                
              </tr>
         `).join('');
     } catch (error) {
@@ -793,11 +793,11 @@ async function loadSalaryPayments() {
         if (!tbody) return;
         tbody.innerHTML = payments.map(p => `
              <tr>
-                <td>${p.id}电子
-                <td>${p.employee?.name || ''}电子
-                <td>${formatCurrency(p.amount)}电子
-                <td>${p.payment_date}电子
-                <td>${p.month}电子
+                <td>${p.id}
+                <td>${p.employee?.name || ''}
+                <td>${formatCurrency(p.amount)}
+                <td>${p.payment_date}
+                <td>${p.month}
              </tr>
         `).join('');
     } catch (error) {
@@ -937,9 +937,9 @@ async function loadExpenseCategories() {
         if (!tbody) return;
         tbody.innerHTML = cats.map(c => `
              <tr>
-                <td>${c.id}电子
-                <td>${c.name}电子
-                <td>${c.description || ''}电子
+                <td>${c.id}
+                <td>${c.name}
+                <td>${c.description || ''}
              </tr>
         `).join('');
     } catch (error) {
@@ -954,12 +954,12 @@ async function loadExpenses() {
         if (!tbody) return;
         tbody.innerHTML = expenses.map(e => `
              <tr>
-                <td>${e.id}电子
-                <td>${e.expense_date}电子
-                <td>${e.category?.name || ''}电子
-                <td>${formatCurrency(e.amount)}电子
-                <td>${e.description || ''}电子
-                <td>${e.receipt_image ? '<a href="#" onclick="viewReceipt(\''+e.receipt_image+'\')">View</a>' : ''}电子
+                <td>${e.id}
+                <td>${e.expense_date}
+                <td>${e.category?.name || ''}
+                <td>${formatCurrency(e.amount)}
+                <td>${e.description || ''}
+                <td>${e.receipt_image ? '<a href="#" onclick="viewReceipt(\''+e.receipt_image+'\')">View</a>' : ''}
              </tr>
         `).join('');
     } catch (error) {
@@ -1044,11 +1044,11 @@ function renderPosCart() {
         total += subtotal;
         html += `
              <tr>
-                <td>${item.name}电子
-                <td>${item.unit_price}电子
-                <td>${item.quantity}电子
-                <td>${subtotal.toFixed(2)}电子
-                <td><button onclick="removeFromPosCart(${idx})">❌</button>电子
+                <td>${item.name}
+                <td>${item.unit_price}
+                <td>${item.quantity}
+                <td>${subtotal.toFixed(2)}
+                <td><button onclick="removeFromPosCart(${idx})">❌</button>
              </tr>
         `;
     });
@@ -1102,10 +1102,10 @@ function showReceipt(sale) {
         totalCost += item.cost_of_goods_sold;
         itemsHtml += `
              <tr>
-                <td>${item.product_id}电子
-                <td>${item.quantity}电子
-                <td>${formatCurrency(item.unit_price)}电子
-                <td>${formatCurrency(subtotal)}电子
+                <td>${item.product_id}
+                <td>${item.quantity}
+                <td>${formatCurrency(item.unit_price)}
+                <td>${formatCurrency(subtotal)}
              </tr>
         `;
     });
@@ -1120,8 +1120,8 @@ function showReceipt(sale) {
             <thead> 氧化钙<th>Item</th><th>Qty</th><th>Price</th><th>Subtotal</th> </thead>
             <tbody>${itemsHtml}</tbody>
             <tfoot>
-                 <td colspan="3" style="text-align:right;"><strong>Total:</strong> <strong>${formatCurrency(totalRevenue)}</strong> 电子
-                 <td colspan="3" style="text-align:right;"><strong>Profit:</strong> <strong>${formatCurrency(profit)}</strong> 电子
+                 <td colspan="3" style="text-align:right;"><strong>Total:</strong> <strong>${formatCurrency(totalRevenue)}</strong> 
+                 <td colspan="3" style="text-align:right;"><strong>Profit:</strong> <strong>${formatCurrency(profit)}</strong> 
             </tfoot>
          </table>
     `;
