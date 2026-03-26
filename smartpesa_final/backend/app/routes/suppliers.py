@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, date
 from pydantic import BaseModel
+from sqlalchemy.sql import text
 from app.database import get_db
 from app import auth, models
 from app.models.transaction import Transaction
@@ -143,7 +144,7 @@ def get_or_create_supplier_payment_category(db: Session):
     except ImportError:
         # Fallback using raw SQL
         result = db.execute(
-            "SELECT id FROM expense_categories WHERE name = 'Supplier Payment'"
+            text("SELECT id FROM expense_categories WHERE name = 'Supplier Payment'")
         ).first()
         if result:
             class DummyCategory:
@@ -152,11 +153,10 @@ def get_or_create_supplier_payment_category(db: Session):
             return DummyCategory(result[0])
         else:
             db.execute(
-                "INSERT INTO expense_categories (name, description) "
-                "VALUES ('Supplier Payment', 'Payments made to suppliers')"
+                text("INSERT INTO expense_categories (name, description) VALUES ('Supplier Payment', 'Payments made to suppliers')")
             )
             db.flush()
-            new_id = db.execute("SELECT LAST_INSERT_ID()").scalar()
+            new_id = db.execute(text("SELECT LAST_INSERT_ID()")).scalar()
             class DummyCategory:
                 def __init__(self, id):
                     self.id = id
@@ -178,7 +178,7 @@ def record_supplier_payment(
     current_user: models.User = Depends(get_current_user)
 ):
     """
-    Record a payment to a supplier. Creates an expense transaction and a payment record.
+    Record a payment to a supplier. Creates an expense, a transaction, and a payment record.
     """
     # Verify supplier belongs to user's business
     supplier = db.query(models.Supplier).join(
@@ -197,16 +197,20 @@ def record_supplier_payment(
     # Get or create expense category
     category = get_or_create_supplier_payment_category(db)
     
-    # ========== Create expense record using raw SQL ==========
+    # Convert date to string
+    payment_date_str = payment.payment_date.strftime("%Y-%m-%d")
+    now = datetime.utcnow()
+    
+    # ========== Create expense record ==========
     expense_result = db.execute(
-        """
-        INSERT INTO expenses (category_id, amount, expense_date, description, business_id, supplier_id)
-        VALUES (:cat_id, :amount, :date, :desc, :bus_id, :sup_id)
-        """,
+        text("""
+            INSERT INTO expenses (category_id, amount, expense_date, description, business_id, supplier_id)
+            VALUES (:cat_id, :amount, :date, :desc, :bus_id, :sup_id)
+        """),
         {
             "cat_id": category.id,
             "amount": payment.amount,
-            "date": payment.payment_date,
+            "date": payment_date_str,
             "desc": payment.notes or f"Payment to supplier {supplier.name}",
             "bus_id": supplier.business_id,
             "sup_id": supplier_id
@@ -214,20 +218,36 @@ def record_supplier_payment(
     )
     expense_id = expense_result.lastrowid
     
-    # ========== Create payment record using raw SQL ==========
+    # ========== Create transaction record and capture its ID ==========
+    trans_result = db.execute(
+        text("""
+            INSERT INTO transactions (business_id, amount, type, category, description, reference, created_at)
+            VALUES (:bus_id, :amount, 'expense', 'Supplier Payment', :desc, :ref, :created_at)
+        """),
+        {
+            "bus_id": supplier.business_id,
+            "amount": payment.amount,
+            "desc": payment.notes or f"Payment to supplier {supplier.name}",
+            "ref": f"SUP-PAY-{expense_id}",
+            "created_at": now
+        }
+    )
+    transaction_id = trans_result.lastrowid   # capture the auto-increment ID
+    
+    # ========== Create payment record using the transaction ID ==========
     db.execute(
-        """
-        INSERT INTO payments (supplier_id, amount, payment_date, due_date, notes, paid, paid_date, transaction_id)
-        VALUES (:sup_id, :amount, :payment_date, :due_date, :notes, 1, :paid_date, :trans_id)
-        """,
+        text("""
+            INSERT INTO payments (supplier_id, amount, payment_date, due_date, notes, paid, paid_date, transaction_id)
+            VALUES (:sup_id, :amount, :payment_date, :due_date, :notes, 1, :paid_date, :trans_id)
+        """),
         {
             "sup_id": supplier_id,
             "amount": payment.amount,
-            "payment_date": payment.payment_date,
-            "due_date": payment.payment_date,        # set due_date = payment_date for simplicity
+            "payment_date": payment_date_str,
+            "due_date": payment_date_str,
             "notes": payment.notes,
-            "paid_date": datetime.utcnow(),
-            "trans_id": expense_id
+            "paid_date": now,
+            "trans_id": transaction_id      # use the captured transaction ID
         }
     )
     
@@ -276,6 +296,8 @@ def get_all_payments(
 
     payments_list = []
     for payment, supplier_name in results:
+        # Use getattr to safely access paid_date (in case model is missing it)
+        paid_date = getattr(payment, 'paid_date', None)
         payments_list.append({
             "id": payment.id,
             "supplier_id": payment.supplier_id,
@@ -283,7 +305,7 @@ def get_all_payments(
             "amount": payment.amount,
             "due_date": payment.payment_date,        # map payment_date to due_date for frontend
             "paid": payment.paid,
-            "paid_date": payment.paid_date,
+            "paid_date": paid_date,
             "notes": payment.notes,
             "transaction_id": payment.transaction_id,
             "created_at": payment.created_at

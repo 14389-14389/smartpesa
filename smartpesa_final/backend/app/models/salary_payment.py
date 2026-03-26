@@ -7,6 +7,7 @@ class SalaryPayment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
     amount = Column(Numeric(10,2), nullable=False)
     payment_date = Column(Date, nullable=False)
     month = Column(String(7), nullable=False)
@@ -14,3 +15,4 @@ class SalaryPayment(Base):
     created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
 
     employee = relationship("Employee", back_populates="salary_payments")
+    # business relationship removed to avoid missing property in Business model

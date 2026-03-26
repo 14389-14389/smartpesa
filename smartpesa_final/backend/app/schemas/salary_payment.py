@@ -9,6 +9,7 @@ class SalaryPaymentBase(BaseModel):
     payment_date: date
     month: str
     description: Optional[str] = None
+    business_id: int   # required
 
 class SalaryPaymentCreate(SalaryPaymentBase):
     pass

@@ -8,7 +8,7 @@ from app.models.sale_item import SaleItem
 from app.models.purchase_batch import PurchaseBatch
 from app.models.inventory import Inventory
 from app.models.inventory_movement import InventoryMovement, MovementReason
-from app.models.transaction import Transaction  # <-- added import
+from app.models.transaction import Transaction
 from app.schemas.sale import SaleCreate, Sale as SaleSchema
 
 router = APIRouter(tags=["Sales"])
@@ -82,6 +82,7 @@ def create_sale(sale: SaleCreate, db: Session = Depends(get_db)):
         type='income',
         category='Sales',
         description=f"Sale #{db_sale.id} - {sale.customer_name or 'Walk-in'}",
+        reference=f"SALE-{db_sale.id}",
         created_at=datetime.utcnow()
     )
     db.add(transaction)
